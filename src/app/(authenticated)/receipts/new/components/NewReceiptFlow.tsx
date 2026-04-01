@@ -88,33 +88,38 @@ export function NewReceiptFlow() {
 	const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
 		e.preventDefault();
 		setIsSaving(true);
-		const fd = new FormData(e.currentTarget);
 
-		const amountStr = fd.get("amount") as string;
-		const taxAmountStr = fd.get("taxAmount") as string;
+		try {
+			const fd = new FormData(e.currentTarget);
+			const amountStr = fd.get("amount") as string;
+			const taxAmountStr = fd.get("taxAmount") as string;
 
-		saveReceipt({
-			date: (fd.get("date") as string) || null,
-			payee: (fd.get("payee") as string) || null,
-			amount: amountStr ? Number.parseInt(amountStr, 10) : null,
-			taxAmount: taxAmountStr ? Number.parseInt(taxAmountStr, 10) : null,
-			taxRateCategory:
-				(fd.get("taxRateCategory") as "8" | "10" | "mixed") || null,
-			accountCategory: (fd.get("accountCategory") as string) || null,
-			description: (fd.get("description") as string) || null,
-			invoiceRegistrationNo:
-				(fd.get("invoiceRegistrationNo") as string) || null,
-			projectId: (fd.get("projectId") as string) || null,
-			clientId: (fd.get("clientId") as string) || null,
-			personInCharge: (fd.get("personInCharge") as string) || null,
-			imageUrl: imageBase64,
-			imagePath: "",
-			aiRawResponse,
-			aiConfidence: extraction?.confidence ?? null,
-			isAiVerified: false,
-		});
+			saveReceipt({
+				date: (fd.get("date") as string) || null,
+				payee: (fd.get("payee") as string) || null,
+				amount: amountStr ? Number.parseInt(amountStr, 10) : null,
+				taxAmount: taxAmountStr ? Number.parseInt(taxAmountStr, 10) : null,
+				taxRateCategory:
+					(fd.get("taxRateCategory") as "8" | "10" | "mixed") || null,
+				accountCategory: (fd.get("accountCategory") as string) || null,
+				description: (fd.get("description") as string) || null,
+				invoiceRegistrationNo:
+					(fd.get("invoiceRegistrationNo") as string) || null,
+				projectId: (fd.get("projectId") as string) || null,
+				clientId: (fd.get("clientId") as string) || null,
+				personInCharge: (fd.get("personInCharge") as string) || null,
+				imageUrl: imageBase64,
+				imagePath: "",
+				aiRawResponse,
+				aiConfidence: extraction?.confidence ?? null,
+				isAiVerified: false,
+			});
 
-		router.push(PAGE_PATH.receipts);
+			window.location.href = PAGE_PATH.receipts;
+		} catch {
+			setIsSaving(false);
+			setError("保存に失敗しました");
+		}
 	};
 
 	return (
