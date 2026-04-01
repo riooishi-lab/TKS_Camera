@@ -1,62 +1,54 @@
 "use client";
 
 import { Loader2 } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { useCallback, useState } from "react";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { createClient } from "@/libs/supabase/client";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+	Select,
+	SelectContent,
+	SelectItem,
+	SelectTrigger,
+	SelectValue,
+} from "@/components/ui/select";
+import { ACCOUNT_CATEGORIES } from "@/constants/accountCategories";
+import { PAGE_PATH } from "@/constants/pagePath";
+import {
+	type Project,
+	fileToBase64,
+	getProjects,
+	saveReceipt,
+} from "@/libs/storage";
 import type { ReceiptExtraction } from "@/types/receipt";
-import { createReceipt } from "../../actions/receiptActions";
-import { ReceiptForm } from "../../components/ReceiptForm";
 import { ImageCapture } from "./ImageCapture";
 
-type Project = {
-	id: string;
-	name: string;
-};
-
-type NewReceiptFlowProps = {
-	projects: Project[];
-};
-
-export function NewReceiptFlow({ projects }: NewReceiptFlowProps) {
-	const [step, setStep] = useState<"capture" | "analyzing" | "form">("capture");
-	const [_imageFile, setImageFile] = useState<File | null>(null);
-	const [imageUrl, setImageUrl] = useState("");
-	const [imagePath, setImagePath] = useState("");
+export function NewReceiptFlow() {
+	const router = useRouter();
+	const [step, setStep] = useState<"capture" | "analyzing" | "form">(
+		"capture",
+	);
+	const [imageBase64, setImageBase64] = useState("");
 	const [extraction, setExtraction] = useState<ReceiptExtraction | null>(null);
 	const [aiRawResponse, setAiRawResponse] = useState<Record<
 		string,
 		unknown
 	> | null>(null);
 	const [error, setError] = useState<string | null>(null);
+	const [isSaving, setIsSaving] = useState(false);
+	const [projects] = useState<Project[]>(() => getProjects());
 
 	const handleCapture = useCallback(async (file: File) => {
-		setImageFile(file);
 		setStep("analyzing");
 		setError(null);
 
 		try {
-			// 1. Supabase Storageにアップロード
-			const supabase = createClient();
-			const filePath = `receipts/${Date.now()}-${file.name}`;
+			const base64 = await fileToBase64(file);
+			setImageBase64(base64);
 
-			const { error: uploadError } = await supabase.storage
-				.from("receipt-images")
-				.upload(filePath, file);
-
-			if (uploadError) {
-				throw new Error(`画像アップロードに失敗: ${uploadError.message}`);
-			}
-
-			const {
-				data: { publicUrl },
-			} = supabase.storage.from("receipt-images").getPublicUrl(filePath);
-
-			setImageUrl(publicUrl);
-			setImagePath(filePath);
-
-			// 2. Gemini APIで解析
 			const formData = new FormData();
 			formData.append("file", file);
 
@@ -80,9 +72,39 @@ export function NewReceiptFlow({ projects }: NewReceiptFlowProps) {
 		}
 	}, []);
 
+	const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+		e.preventDefault();
+		setIsSaving(true);
+		const fd = new FormData(e.currentTarget);
+
+		const amountStr = fd.get("amount") as string;
+		const taxAmountStr = fd.get("taxAmount") as string;
+
+		saveReceipt({
+			date: (fd.get("date") as string) || null,
+			payee: (fd.get("payee") as string) || null,
+			amount: amountStr ? Number.parseInt(amountStr, 10) : null,
+			taxAmount: taxAmountStr ? Number.parseInt(taxAmountStr, 10) : null,
+			taxRateCategory:
+				(fd.get("taxRateCategory") as "8" | "10" | "mixed") || null,
+			accountCategory: (fd.get("accountCategory") as string) || null,
+			description: (fd.get("description") as string) || null,
+			invoiceRegistrationNo:
+				(fd.get("invoiceRegistrationNo") as string) || null,
+			projectId: (fd.get("projectId") as string) || null,
+			personInCharge: (fd.get("personInCharge") as string) || null,
+			imageUrl: imageBase64,
+			imagePath: "",
+			aiRawResponse,
+			aiConfidence: extraction?.confidence ?? null,
+			isAiVerified: false,
+		});
+
+		router.push(PAGE_PATH.receipts);
+	};
+
 	return (
 		<div className="space-y-6">
-			{/* ステップ1: 画像キャプチャ */}
 			<Card>
 				<CardHeader>
 					<CardTitle className="text-lg">
@@ -109,7 +131,6 @@ export function NewReceiptFlow({ projects }: NewReceiptFlowProps) {
 				</CardContent>
 			</Card>
 
-			{/* ステップ2: フォーム入力 */}
 			{step === "form" && extraction && (
 				<Card>
 					<CardHeader>
@@ -123,17 +144,127 @@ export function NewReceiptFlow({ projects }: NewReceiptFlowProps) {
 						</div>
 					</CardHeader>
 					<CardContent>
-						<ReceiptForm
-							action={createReceipt}
-							projects={projects}
-							defaultValues={extraction}
-							imageUrl={imageUrl}
-							imagePath={imagePath}
-							aiRawResponse={aiRawResponse}
-							aiConfidence={extraction.confidence}
-							submitLabel="レシートを登録"
-							pendingLabel="登録中..."
-						/>
+						<form onSubmit={handleSubmit} className="space-y-4">
+							<div className="grid gap-4 sm:grid-cols-2">
+								<div className="space-y-2">
+									<Label htmlFor="date">日付</Label>
+									<Input
+										id="date"
+										name="date"
+										type="date"
+										defaultValue={extraction.date ?? ""}
+									/>
+								</div>
+								<div className="space-y-2">
+									<Label htmlFor="payee">支払先</Label>
+									<Input
+										id="payee"
+										name="payee"
+										defaultValue={extraction.payee ?? ""}
+										placeholder="店舗名・会社名"
+									/>
+								</div>
+							</div>
+							<div className="grid gap-4 sm:grid-cols-2">
+								<div className="space-y-2">
+									<Label htmlFor="amount">金額（税込）</Label>
+									<Input
+										id="amount"
+										name="amount"
+										type="number"
+										defaultValue={extraction.amount ?? ""}
+									/>
+								</div>
+								<div className="space-y-2">
+									<Label htmlFor="taxAmount">消費税額</Label>
+									<Input
+										id="taxAmount"
+										name="taxAmount"
+										type="number"
+										defaultValue={extraction.taxAmount ?? ""}
+									/>
+								</div>
+							</div>
+							<div className="grid gap-4 sm:grid-cols-2">
+								<div className="space-y-2">
+									<Label htmlFor="taxRateCategory">税率区分</Label>
+									<Select
+										name="taxRateCategory"
+										defaultValue={extraction.taxRateCategory ?? ""}
+									>
+										<SelectTrigger id="taxRateCategory">
+											<SelectValue placeholder="選択" />
+										</SelectTrigger>
+										<SelectContent>
+											<SelectItem value="10">標準税率 (10%)</SelectItem>
+											<SelectItem value="8">軽減税率 (8%)</SelectItem>
+											<SelectItem value="mixed">混在</SelectItem>
+										</SelectContent>
+									</Select>
+								</div>
+								<div className="space-y-2">
+									<Label htmlFor="accountCategory">勘定科目</Label>
+									<Select
+										name="accountCategory"
+										defaultValue={extraction.accountCategory ?? ""}
+									>
+										<SelectTrigger id="accountCategory">
+											<SelectValue placeholder="選択" />
+										</SelectTrigger>
+										<SelectContent>
+											{ACCOUNT_CATEGORIES.map((c) => (
+												<SelectItem key={c.value} value={c.value}>
+													{c.label}
+												</SelectItem>
+											))}
+										</SelectContent>
+									</Select>
+								</div>
+							</div>
+							<div className="space-y-2">
+								<Label htmlFor="description">摘要・説明</Label>
+								<Input
+									id="description"
+									name="description"
+									defaultValue={extraction.description ?? ""}
+								/>
+							</div>
+							<div className="space-y-2">
+								<Label htmlFor="invoiceRegistrationNo">
+									インボイス登録番号
+								</Label>
+								<Input
+									id="invoiceRegistrationNo"
+									name="invoiceRegistrationNo"
+									defaultValue={extraction.invoiceRegistrationNo ?? ""}
+									placeholder="T1234567890123"
+								/>
+							</div>
+							<div className="grid gap-4 sm:grid-cols-2">
+								<div className="space-y-2">
+									<Label htmlFor="projectId">プロジェクト</Label>
+									<Select name="projectId" defaultValue="">
+										<SelectTrigger id="projectId">
+											<SelectValue placeholder="選択" />
+										</SelectTrigger>
+										<SelectContent>
+											{projects.map((p) => (
+												<SelectItem key={p.id} value={p.id}>
+													{p.name}
+												</SelectItem>
+											))}
+										</SelectContent>
+									</Select>
+								</div>
+								<div className="space-y-2">
+									<Label htmlFor="personInCharge">担当者</Label>
+									<Input id="personInCharge" name="personInCharge" />
+								</div>
+							</div>
+							<Button type="submit" className="w-full" disabled={isSaving}>
+								{isSaving ? "登録中..." : "レシートを登録"}
+							</Button>
+						</form>
 					</CardContent>
 				</Card>
 			)}

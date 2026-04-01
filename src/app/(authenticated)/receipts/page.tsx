@@ -1,5 +1,8 @@
+"use client";
+
 import { Plus } from "lucide-react";
 import Link from "next/link";
+import { useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -11,33 +14,17 @@ import {
 	TableRow,
 } from "@/components/ui/table";
 import { PAGE_PATH } from "@/constants/pagePath";
-import { createClient } from "@/libs/supabase/server";
+import { getReceipts } from "@/libs/storage";
+import type { Receipt } from "@/types/receipt";
 import { formatCurrency } from "@/utils/formatCurrency";
 import { formatDate } from "@/utils/formatDate";
 
-export default async function ReceiptsPage() {
-	const supabase = await createClient();
+export default function ReceiptsPage() {
+	const [receipts, setReceipts] = useState<Receipt[]>([]);
 
-	const {
-		data: { user },
-	} = await supabase.auth.getUser();
-
-	const { data: profile } = await supabase
-		.from("profiles")
-		.select("organization_id")
-		.eq("id", user?.id)
-		.single();
-
-	const { data: receipts } = await supabase
-		.from("receipts")
-		.select(
-			"id, date, payee, amount, account_category, is_ai_verified, created_at",
-		)
-		.eq("organization_id", profile?.organization_id)
-		.is("deleted_at", null)
-		.order("created_at", { ascending: false });
-
-	const hasReceipts = receipts && receipts.length > 0;
+	useEffect(() => {
+		setReceipts(getReceipts());
+	}, []);
 
 	return (
 		<div>
@@ -49,7 +36,7 @@ export default async function ReceiptsPage() {
 				</Button>
 			</div>
 
-			{hasReceipts ? (
+			{receipts.length > 0 ? (
 				<div className="mt-6 rounded-md border">
 					<Table>
 						<TableHeader>
@@ -85,9 +72,9 @@ export default async function ReceiptsPage() {
 											? formatCurrency(receipt.amount)
 											: "-"}
 									</TableCell>
-									<TableCell>{receipt.account_category ?? "-"}</TableCell>
+									<TableCell>{receipt.accountCategory ?? "-"}</TableCell>
 									<TableCell>
-										{receipt.is_ai_verified ? (
+										{receipt.isAiVerified ? (
 											<Badge variant="default">確認済み</Badge>
 										) : (
 											<Badge variant="secondary">未確認</Badge>

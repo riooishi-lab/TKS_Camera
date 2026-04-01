@@ -1,35 +1,83 @@
+"use client";
+
+import { Pencil, Plus, Trash2 } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+	Dialog,
+	DialogContent,
+	DialogDescription,
+	DialogFooter,
+	DialogHeader,
+	DialogTitle,
+	DialogTrigger,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+	Select,
+	SelectContent,
+	SelectItem,
+	SelectTrigger,
+	SelectValue,
+} from "@/components/ui/select";
 import {
 	Table,
 	TableBody,
+	TableCell,
 	TableHead,
 	TableHeader,
 	TableRow,
 } from "@/components/ui/table";
-import { createClient } from "@/libs/supabase/server";
-import { CreateProjectDialog } from "./components/CreateProjectDialog";
-import { ProjectRow } from "./components/ProjectRow";
+import {
+	type Project,
+	deleteProject,
+	getProjects,
+	saveProject,
+	updateProject,
+} from "@/libs/storage";
+import { formatDate } from "@/utils/formatDate";
 
-export default async function ProjectsPage() {
-	const supabase = await createClient();
+export default function ProjectsPage() {
+	const [projects, setProjects] = useState<Project[]>([]);
+	const [createOpen, setCreateOpen] = useState(false);
+	const [editTarget, setEditTarget] = useState<Project | null>(null);
 
-	const {
-		data: { user },
-	} = await supabase.auth.getUser();
+	useEffect(() => {
+		setProjects(getProjects());
+	}, []);
 
-	const { data: profile } = await supabase
-		.from("profiles")
-		.select("organization_id")
-		.eq("id", user?.id)
-		.single();
+	const reload = () => setProjects(getProjects());
 
-	const { data: projects } = await supabase
-		.from("projects")
-		.select("id, name, description, is_active, created_at")
-		.eq("organization_id", profile?.organization_id)
-		.is("deleted_at", null)
-		.order("created_at", { ascending: false });
+	const handleCreate = (e: React.FormEvent<HTMLFormElement>) => {
+		e.preventDefault();
+		const fd = new FormData(e.currentTarget);
+		saveProject(
+			fd.get("name") as string,
+			(fd.get("description") as string) || null,
+		);
+		setCreateOpen(false);
+		reload();
+	};
 
-	const hasProjects = projects && projects.length > 0;
+	const handleEdit = (e: React.FormEvent<HTMLFormElement>) => {
+		e.preventDefault();
+		if (!editTarget) return;
+		const fd = new FormData(e.currentTarget);
+		updateProject(editTarget.id, {
+			name: fd.get("name") as string,
+			description: (fd.get("description") as string) || null,
+			isActive: fd.get("isActive") === "true",
+		});
+		setEditTarget(null);
+		reload();
+	};
+
+	const handleDelete = (id: string) => {
+		deleteProject(id);
+		reload();
+	};
 
 	return (
 		<div>
@@ -40,10 +88,33 @@ export default async function ProjectsPage() {
 						案件やプロジェクトを管理します
 					</p>
 				</div>
-				<CreateProjectDialog />
+				<Dialog open={createOpen} onOpenChange={setCreateOpen}>
+					<DialogTrigger render={<Button />}>
+						<Plus className="mr-2 h-4 w-4" />
+						プロジェクト作成
+					</DialogTrigger>
+					<DialogContent>
+						<DialogHeader>
+							<DialogTitle>新しいプロジェクト</DialogTitle>
+						</DialogHeader>
+						<form onSubmit={handleCreate} className="space-y-4">
+							<div className="space-y-2">
+								<Label htmlFor="create-name">プロジェクト名</Label>
+								<Input id="create-name" name="name" required />
+							</div>
+							<div className="space-y-2">
+								<Label htmlFor="create-desc">説明（任意）</Label>
+								<Input id="create-desc" name="description" />
+							</div>
+							<Button type="submit" className="w-full">
+								作成
+							</Button>
+						</form>
+					</DialogContent>
+				</Dialog>
 			</div>
 
-			{hasProjects ? (
+			{projects.length > 0 ? (
 				<div className="mt-6 rounded-md border">
 					<Table>
 						<TableHeader>
@@ -56,8 +127,55 @@ export default async function ProjectsPage() {
 							</TableRow>
 						</TableHeader>
 						<TableBody>
-							{projects.map((project) => (
-								<ProjectRow key={project.id} project={project} />
+							{projects.map((p) => (
+								<TableRow key={p.id}>
+									<TableCell className="font-medium">{p.name}</TableCell>
+									<TableCell>{p.description ?? "-"}</TableCell>
+									<TableCell>
+										{p.isActive ? (
+											<Badge variant="default">有効</Badge>
+										) : (
+											<Badge variant="secondary">無効</Badge>
+										)}
+									</TableCell>
+									<TableCell>{formatDate(p.createdAt)}</TableCell>
+									<TableCell>
+										<div className="flex gap-1">
+											<Button
+												variant="ghost"
+												size="icon"
+												onClick={() => setEditTarget(p)}
+											>
+												<Pencil className="h-4 w-4" />
+											</Button>
+											<Dialog>
+												<DialogTrigger
+													render={<Button variant="ghost" size="icon" />}
+												>
+													<Trash2 className="h-4 w-4" />
+												</DialogTrigger>
+												<DialogContent>
+													<DialogHeader>
+														<DialogTitle>
+															プロジェクトを削除しますか？
+														</DialogTitle>
+														<DialogDescription>
+															「{p.name}」を削除します。
+														</DialogDescription>
+													</DialogHeader>
+													<DialogFooter>
+														<Button
+															variant="destructive"
+															onClick={() => handleDelete(p.id)}
+														>
+															削除する
+														</Button>
+													</DialogFooter>
+												</DialogContent>
+											</Dialog>
+										</div>
+									</TableCell>
+								</TableRow>
 							))}
 						</TableBody>
 					</Table>
@@ -67,11 +185,59 @@ export default async function ProjectsPage() {
 					<p className="text-muted-foreground">
 						プロジェクトがまだ登録されていません
 					</p>
-					<div className="mt-4">
-						<CreateProjectDialog />
-					</div>
 				</div>
 			)}
+
+			{/* 編集ダイアログ */}
+			<Dialog
+				open={editTarget !== null}
+				onOpenChange={(open) => !open && setEditTarget(null)}
+			>
+				<DialogContent>
+					<DialogHeader>
+						<DialogTitle>プロジェクト編集</DialogTitle>
+					</DialogHeader>
+					{editTarget && (
+						<form onSubmit={handleEdit} className="space-y-4">
+							<div className="space-y-2">
+								<Label htmlFor="edit-name">プロジェクト名</Label>
+								<Input
+									id="edit-name"
+									name="name"
+									defaultValue={editTarget.name}
+									required
+								/>
+							</div>
+							<div className="space-y-2">
+								<Label htmlFor="edit-desc">説明（任意）</Label>
+								<Input
+									id="edit-desc"
+									name="description"
+									defaultValue={editTarget.description ?? ""}
+								/>
+							</div>
+							<div className="space-y-2">
+								<Label htmlFor="edit-active">ステータス</Label>
+								<Select
+									name="isActive"
+									defaultValue={String(editTarget.isActive)}
+								>
+									<SelectTrigger id="edit-active">
+										<SelectValue />
+									</SelectTrigger>
+									<SelectContent>
+										<SelectItem value="true">有効</SelectItem>
+										<SelectItem value="false">無効</SelectItem>
+									</SelectContent>
+								</Select>
+							</div>
+							<Button type="submit" className="w-full">
+								更新
+							</Button>
+						</form>
+					)}
+				</DialogContent>
+			</Dialog>
 		</div>
 	);
 }

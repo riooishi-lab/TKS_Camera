@@ -2,29 +2,9 @@ import { ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { PAGE_PATH } from "@/constants/pagePath";
-import { createClient } from "@/libs/supabase/server";
 import { NewReceiptFlow } from "./components/NewReceiptFlow";
 
-export default async function NewReceiptPage() {
-	const supabase = await createClient();
-
-	const {
-		data: { user },
-	} = await supabase.auth.getUser();
-
-	const { data: profile } = await supabase
-		.from("profiles")
-		.select("organization_id")
-		.eq("id", user?.id)
-		.single();
-
-	const { data: projects } = await supabase
-		.from("projects")
-		.select("id, name")
-		.eq("organization_id", profile?.organization_id)
-		.eq("is_active", true)
-		.order("name");
-
+export default function NewReceiptPage() {
 	return (
 		<div>
 			<div className="mb-6 flex items-center gap-4">
@@ -38,7 +18,7 @@ export default async function NewReceiptPage() {
 				<h1 className="text-2xl font-bold">レシート登録</h1>
 			</div>
 			<div className="mx-auto max-w-2xl">
-				<NewReceiptFlow projects={projects ?? []} />
+				<NewReceiptFlow />
 			</div>
 		</div>
 	);
