@@ -7,6 +7,7 @@ export type Project = {
 	id: string;
 	name: string;
 	description: string | null;
+	clientId: string | null;
 	isActive: boolean;
 	createdAt: string;
 };
@@ -79,12 +80,17 @@ export function getProjects(): Project[] {
 	return JSON.parse(raw);
 }
 
-export function saveProject(name: string, description: string | null): Project {
+export function saveProject(
+	name: string,
+	description: string | null,
+	clientId: string | null = null,
+): Project {
 	const projects = getProjects();
 	const project: Project = {
 		id: generateId(),
 		name,
 		description,
+		clientId,
 		isActive: true,
 		createdAt: new Date().toISOString(),
 	};

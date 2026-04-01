@@ -31,8 +31,10 @@ import {
 	TableRow,
 } from "@/components/ui/table";
 import {
+	type Client,
 	type Project,
 	deleteProject,
+	getClients,
 	getProjects,
 	saveProject,
 	updateProject,
@@ -41,14 +43,24 @@ import { formatDate } from "@/utils/formatDate";
 
 export default function ProjectsPage() {
 	const [projects, setProjects] = useState<Project[]>([]);
+	const [clients, setClients] = useState<Client[]>([]);
 	const [createOpen, setCreateOpen] = useState(false);
 	const [editTarget, setEditTarget] = useState<Project | null>(null);
 
 	useEffect(() => {
 		setProjects(getProjects());
+		setClients(getClients());
 	}, []);
 
-	const reload = () => setProjects(getProjects());
+	const reload = () => {
+		setProjects(getProjects());
+		setClients(getClients());
+	};
+
+	const clientName = (clientId: string | null | undefined) => {
+		if (!clientId) return "-";
+		return clients.find((c) => c.id === clientId)?.name ?? "-";
+	};
 
 	const handleCreate = (e: React.FormEvent<HTMLFormElement>) => {
 		e.preventDefault();
@@ -56,6 +68,7 @@ export default function ProjectsPage() {
 		saveProject(
 			fd.get("name") as string,
 			(fd.get("description") as string) || null,
+			(fd.get("clientId") as string) || null,
 		);
 		setCreateOpen(false);
 		reload();
@@ -68,6 +81,7 @@ export default function ProjectsPage() {
 		updateProject(editTarget.id, {
 			name: fd.get("name") as string,
 			description: (fd.get("description") as string) || null,
+			clientId: (fd.get("clientId") as string) || null,
 			isActive: fd.get("isActive") === "true",
 		});
 		setEditTarget(null);
@@ -103,6 +117,21 @@ export default function ProjectsPage() {
 								<Input id="create-name" name="name" required />
 							</div>
 							<div className="space-y-2">
+								<Label htmlFor="create-client">顧客企業</Label>
+								<Select name="clientId" defaultValue="">
+									<SelectTrigger id="create-client">
+										<SelectValue placeholder="選択" />
+									</SelectTrigger>
+									<SelectContent>
+										{clients.map((c) => (
+											<SelectItem key={c.id} value={c.id}>
+												{c.name}
+											</SelectItem>
+										))}
+									</SelectContent>
+								</Select>
+							</div>
+							<div className="space-y-2">
 								<Label htmlFor="create-desc">説明（任意）</Label>
 								<Input id="create-desc" name="description" />
 							</div>
@@ -120,7 +149,7 @@ export default function ProjectsPage() {
 						<TableHeader>
 							<TableRow>
 								<TableHead>プロジェクト名</TableHead>
-								<TableHead>説明</TableHead>
+								<TableHead>顧客企業</TableHead>
 								<TableHead>ステータス</TableHead>
 								<TableHead>作成日</TableHead>
 								<TableHead className="w-24">操作</TableHead>
@@ -130,7 +159,7 @@ export default function ProjectsPage() {
 							{projects.map((p) => (
 								<TableRow key={p.id}>
 									<TableCell className="font-medium">{p.name}</TableCell>
-									<TableCell>{p.description ?? "-"}</TableCell>
+									<TableCell>{clientName(p.clientId)}</TableCell>
 									<TableCell>
 										{p.isActive ? (
 											<Badge variant="default">有効</Badge>
@@ -207,6 +236,24 @@ export default function ProjectsPage() {
 									defaultValue={editTarget.name}
 									required
 								/>
+							</div>
+							<div className="space-y-2">
+								<Label htmlFor="edit-client">顧客企業</Label>
+								<Select
+									name="clientId"
+									defaultValue={editTarget.clientId ?? ""}
+								>
+									<SelectTrigger id="edit-client">
+										<SelectValue placeholder="選択" />
+									</SelectTrigger>
+									<SelectContent>
+										{clients.map((c) => (
+											<SelectItem key={c.id} value={c.id}>
+												{c.name}
+											</SelectItem>
+										))}
+									</SelectContent>
+								</Select>
 							</div>
 							<div className="space-y-2">
 								<Label htmlFor="edit-desc">説明（任意）</Label>
