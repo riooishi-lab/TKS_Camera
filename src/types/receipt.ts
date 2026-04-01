@@ -11,6 +11,7 @@ export type Receipt = {
 	description: string | null;
 	invoiceRegistrationNo: string | null;
 	projectId: string | null;
+	clientId: string | null;
 	personInCharge: string | null;
 	imageUrl: string;
 	imagePath: string;

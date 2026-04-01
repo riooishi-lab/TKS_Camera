@@ -113,6 +113,139 @@ export function deleteProject(id: string): boolean {
 	return true;
 }
 
+// ===== Clients (顧客企業) =====
+
+const CLIENTS_KEY = "receipt-scanner:clients";
+
+export type Client = {
+	id: string;
+	name: string;
+	createdAt: string;
+};
+
+export function getClients(): Client[] {
+	if (typeof window === "undefined") return [];
+	const raw = localStorage.getItem(CLIENTS_KEY);
+	if (!raw) return [];
+	return JSON.parse(raw);
+}
+
+export function saveClient(name: string): Client {
+	const clients = getClients();
+	const client: Client = {
+		id: generateId(),
+		name,
+		createdAt: new Date().toISOString(),
+	};
+	clients.unshift(client);
+	localStorage.setItem(CLIENTS_KEY, JSON.stringify(clients));
+	return client;
+}
+
+export function updateClient(
+	id: string,
+	data: Partial<Omit<Client, "id" | "createdAt">>,
+): Client | null {
+	const clients = getClients();
+	const index = clients.findIndex((c) => c.id === id);
+	if (index === -1) return null;
+	clients[index] = { ...clients[index], ...data };
+	localStorage.setItem(CLIENTS_KEY, JSON.stringify(clients));
+	return clients[index];
+}
+
+export function deleteClient(id: string): boolean {
+	const clients = getClients();
+	const filtered = clients.filter((c) => c.id !== id);
+	if (filtered.length === clients.length) return false;
+	localStorage.setItem(CLIENTS_KEY, JSON.stringify(filtered));
+	return true;
+}
+
+// ===== Staff (担当者) =====
+
+const STAFF_KEY = "receipt-scanner:staff";
+
+export type Staff = {
+	id: string;
+	name: string;
+	createdAt: string;
+};
+
+export function getStaff(): Staff[] {
+	if (typeof window === "undefined") return [];
+	const raw = localStorage.getItem(STAFF_KEY);
+	if (!raw) return [];
+	return JSON.parse(raw);
+}
+
+export function saveStaff(name: string): Staff {
+	const staffList = getStaff();
+	const staff: Staff = {
+		id: generateId(),
+		name,
+		createdAt: new Date().toISOString(),
+	};
+	staffList.unshift(staff);
+	localStorage.setItem(STAFF_KEY, JSON.stringify(staffList));
+	return staff;
+}
+
+export function updateStaff(
+	id: string,
+	data: Partial<Omit<Staff, "id" | "createdAt">>,
+): Staff | null {
+	const staffList = getStaff();
+	const index = staffList.findIndex((s) => s.id === id);
+	if (index === -1) return null;
+	staffList[index] = { ...staffList[index], ...data };
+	localStorage.setItem(STAFF_KEY, JSON.stringify(staffList));
+	return staffList[index];
+}
+
+export function deleteStaff(id: string): boolean {
+	const staffList = getStaff();
+	const filtered = staffList.filter((s) => s.id !== id);
+	if (filtered.length === staffList.length) return false;
+	localStorage.setItem(STAFF_KEY, JSON.stringify(filtered));
+	return true;
+}
+
+// ===== Seed Data (初期データ) =====
+
+const SEED_KEY = "receipt-scanner:seeded";
+
+export function seedIfEmpty(): void {
+	if (typeof window === "undefined") return;
+	if (localStorage.getItem(SEED_KEY)) return;
+
+	// プロジェクト5件
+	const projectNames = [
+		"東京駅前ビル改修工事",
+		"大阪支社オフィス移転",
+		"名古屋新工場建設",
+		"福岡商業施設リニューアル",
+		"札幌マンション新築",
+	];
+	for (const name of projectNames) {
+		saveProject(name, null);
+	}
+
+	// 企業3社
+	const clientNames = ["株式会社山田建設", "有限会社鈴木工務店", "合同会社佐藤設計"];
+	for (const name of clientNames) {
+		saveClient(name);
+	}
+
+	// 担当2名
+	const staffNames = ["田中太郎", "佐藤花子"];
+	for (const name of staffNames) {
+		saveStaff(name);
+	}
+
+	localStorage.setItem(SEED_KEY, "true");
+}
+
 // ===== Image =====
 
 export function fileToBase64(file: File): Promise<string> {

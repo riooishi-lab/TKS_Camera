@@ -18,9 +18,13 @@ import {
 import { ACCOUNT_CATEGORIES } from "@/constants/accountCategories";
 import { PAGE_PATH } from "@/constants/pagePath";
 import {
+	type Client,
 	type Project,
+	type Staff,
 	fileToBase64,
+	getClients,
 	getProjects,
+	getStaff,
 	saveReceipt,
 } from "@/libs/storage";
 import type { ReceiptExtraction } from "@/types/receipt";
@@ -40,6 +44,8 @@ export function NewReceiptFlow() {
 	const [error, setError] = useState<string | null>(null);
 	const [isSaving, setIsSaving] = useState(false);
 	const [projects] = useState<Project[]>(() => getProjects());
+	const [clients] = useState<Client[]>(() => getClients());
+	const [staffList] = useState<Staff[]>(() => getStaff());
 
 	const handleCapture = useCallback(async (file: File) => {
 		setStep("analyzing");
@@ -98,6 +104,7 @@ export function NewReceiptFlow() {
 			invoiceRegistrationNo:
 				(fd.get("invoiceRegistrationNo") as string) || null,
 			projectId: (fd.get("projectId") as string) || null,
+			clientId: (fd.get("clientId") as string) || null,
 			personInCharge: (fd.get("personInCharge") as string) || null,
 			imageUrl: imageBase64,
 			imagePath: "",
@@ -263,9 +270,35 @@ export function NewReceiptFlow() {
 									</Select>
 								</div>
 								<div className="space-y-2">
-									<Label htmlFor="personInCharge">担当者</Label>
-									<Input id="personInCharge" name="personInCharge" />
+									<Label htmlFor="clientId">顧客企業</Label>
+									<Select name="clientId" defaultValue="">
+										<SelectTrigger id="clientId">
+											<SelectValue placeholder="選択" />
+										</SelectTrigger>
+										<SelectContent>
+											{clients.map((c) => (
+												<SelectItem key={c.id} value={c.id}>
+													{c.name}
+												</SelectItem>
+											))}
+										</SelectContent>
+									</Select>
 								</div>
+							</div>
+							<div className="space-y-2">
+								<Label htmlFor="personInCharge">担当者</Label>
+								<Select name="personInCharge" defaultValue="">
+									<SelectTrigger id="personInCharge">
+										<SelectValue placeholder="選択" />
+									</SelectTrigger>
+									<SelectContent>
+										{staffList.map((s) => (
+											<SelectItem key={s.id} value={s.name}>
+												{s.name}
+											</SelectItem>
+										))}
+									</SelectContent>
+								</Select>
 							</div>
 							<Button type="submit" className="w-full" disabled={isSaving}>
 								{isSaving ? "登録中..." : "レシートを登録"}

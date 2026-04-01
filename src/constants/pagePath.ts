@@ -5,7 +5,7 @@ export const PAGE_PATH = {
 	receiptDetail: (id: string) => `/receipts/${id}` as const,
 	receiptEdit: (id: string) => `/receipts/${id}/edit` as const,
 	projects: "/projects",
+	clients: "/clients",
+	staff: "/staff",
 	settings: "/settings",
-	signIn: "/auth/signin",
-	signUp: "/auth/signup",
 } as const;

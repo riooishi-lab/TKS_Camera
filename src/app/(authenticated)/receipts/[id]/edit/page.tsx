@@ -18,9 +18,13 @@ import {
 import { ACCOUNT_CATEGORIES } from "@/constants/accountCategories";
 import { PAGE_PATH } from "@/constants/pagePath";
 import {
+	type Client,
 	type Project,
+	type Staff,
+	getClients,
 	getProjects,
 	getReceipt,
+	getStaff,
 	updateReceipt,
 } from "@/libs/storage";
 import type { Receipt } from "@/types/receipt";
@@ -30,6 +34,8 @@ export default function EditReceiptPage() {
 	const router = useRouter();
 	const [receipt, setReceipt] = useState<Receipt | null>(null);
 	const [projects] = useState<Project[]>(() => getProjects());
+	const [clients] = useState<Client[]>(() => getClients());
+	const [staffList] = useState<Staff[]>(() => getStaff());
 	const [isSaving, setIsSaving] = useState(false);
 
 	useEffect(() => {
@@ -62,6 +68,7 @@ export default function EditReceiptPage() {
 			invoiceRegistrationNo:
 				(fd.get("invoiceRegistrationNo") as string) || null,
 			projectId: (fd.get("projectId") as string) || null,
+			clientId: (fd.get("clientId") as string) || null,
 			personInCharge: (fd.get("personInCharge") as string) || null,
 			isAiVerified: true,
 		});
@@ -217,13 +224,41 @@ export default function EditReceiptPage() {
 									</Select>
 								</div>
 								<div className="space-y-2">
-									<Label htmlFor="personInCharge">担当者</Label>
-									<Input
-										id="personInCharge"
-										name="personInCharge"
-										defaultValue={receipt.personInCharge ?? ""}
-									/>
+									<Label htmlFor="clientId">顧客企業</Label>
+									<Select
+										name="clientId"
+										defaultValue={receipt.clientId ?? ""}
+									>
+										<SelectTrigger id="clientId">
+											<SelectValue placeholder="選択" />
+										</SelectTrigger>
+										<SelectContent>
+											{clients.map((c) => (
+												<SelectItem key={c.id} value={c.id}>
+													{c.name}
+												</SelectItem>
+											))}
+										</SelectContent>
+									</Select>
 								</div>
+							</div>
+							<div className="space-y-2">
+								<Label htmlFor="personInCharge">担当者</Label>
+								<Select
+									name="personInCharge"
+									defaultValue={receipt.personInCharge ?? ""}
+								>
+									<SelectTrigger id="personInCharge">
+										<SelectValue placeholder="選択" />
+									</SelectTrigger>
+									<SelectContent>
+										{staffList.map((s) => (
+											<SelectItem key={s.id} value={s.name}>
+												{s.name}
+											</SelectItem>
+										))}
+									</SelectContent>
+								</Select>
 							</div>
 							<Button type="submit" className="w-full" disabled={isSaving}>
 								{isSaving ? "更新中..." : "更新する"}
