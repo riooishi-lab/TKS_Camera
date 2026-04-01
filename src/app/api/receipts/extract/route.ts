@@ -72,8 +72,14 @@ export async function POST(request: Request) {
 			rawResponse: JSON.parse(jsonMatch[0]),
 		});
 	} catch (err) {
-		const message =
-			err instanceof Error ? err.message : "不明なエラーが発生しました";
+		const raw = err instanceof Error ? err.message : "";
+		let message = "不明なエラーが発生しました";
+		if (raw.includes("429") || raw.includes("Too Many Requests")) {
+			message =
+				"リクエストが多すぎます。しばらく待ってからもう一度お試しください。";
+		} else if (raw.includes("API key")) {
+			message = "APIキーが無効です。設定を確認してください。";
+		}
 		return NextResponse.json({ error: message }, { status: 500 });
 	}
 }
