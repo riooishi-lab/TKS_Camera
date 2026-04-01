@@ -4,6 +4,7 @@ import { Pencil, Plus, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { NativeSelect } from "@/components/ui/native-select";
 import {
 	Dialog,
 	DialogContent,
@@ -118,18 +119,16 @@ export default function ProjectsPage() {
 							</div>
 							<div className="space-y-2">
 								<Label htmlFor="create-client">顧客企業</Label>
-								<Select name="clientId" defaultValue="">
-									<SelectTrigger id="create-client">
-										<SelectValue placeholder="選択" />
-									</SelectTrigger>
-									<SelectContent>
-										{clients.map((c) => (
-											<SelectItem key={c.id} value={c.id}>
-												{c.name}
-											</SelectItem>
-										))}
-									</SelectContent>
-								</Select>
+								<NativeSelect
+									id="create-client"
+									name="clientId"
+									defaultValue=""
+									placeholder="選択"
+									options={clients.map((c) => ({
+										value: c.id,
+										label: c.name,
+									}))}
+								/>
 							</div>
 							<div className="space-y-2">
 								<Label htmlFor="create-desc">説明（任意）</Label>
@@ -239,21 +238,16 @@ export default function ProjectsPage() {
 							</div>
 							<div className="space-y-2">
 								<Label htmlFor="edit-client">顧客企業</Label>
-								<Select
+								<NativeSelect
+									id="edit-client"
 									name="clientId"
 									defaultValue={editTarget.clientId ?? ""}
-								>
-									<SelectTrigger id="edit-client">
-										<SelectValue placeholder="選択" />
-									</SelectTrigger>
-									<SelectContent>
-										{clients.map((c) => (
-											<SelectItem key={c.id} value={c.id}>
-												{c.name}
-											</SelectItem>
-										))}
-									</SelectContent>
-								</Select>
+									placeholder="選択"
+									options={clients.map((c) => ({
+										value: c.id,
+										label: c.name,
+									}))}
+								/>
 							</div>
 							<div className="space-y-2">
 								<Label htmlFor="edit-desc">説明（任意）</Label>

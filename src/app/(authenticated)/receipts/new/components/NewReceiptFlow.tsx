@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { NativeSelect } from "@/components/ui/native-select";
 import {
 	Select,
 	SelectContent,
@@ -256,49 +257,43 @@ export function NewReceiptFlow() {
 							<div className="grid gap-4 sm:grid-cols-2">
 								<div className="space-y-2">
 									<Label htmlFor="projectId">プロジェクト</Label>
-									<Select name="projectId" defaultValue="">
-										<SelectTrigger id="projectId">
-											<SelectValue placeholder="選択" />
-										</SelectTrigger>
-										<SelectContent>
-											{projects.map((p) => (
-												<SelectItem key={p.id} value={p.id}>
-													{p.name}
-												</SelectItem>
-											))}
-										</SelectContent>
-									</Select>
+									<NativeSelect
+										id="projectId"
+										name="projectId"
+										defaultValue=""
+										placeholder="選択"
+										options={projects.map((p) => ({
+											value: p.id,
+											label: p.name,
+										}))}
+									/>
 								</div>
 								<div className="space-y-2">
 									<Label htmlFor="clientId">顧客企業</Label>
-									<Select name="clientId" defaultValue="">
-										<SelectTrigger id="clientId">
-											<SelectValue placeholder="選択" />
-										</SelectTrigger>
-										<SelectContent>
-											{clients.map((c) => (
-												<SelectItem key={c.id} value={c.id}>
-													{c.name}
-												</SelectItem>
-											))}
-										</SelectContent>
-									</Select>
+									<NativeSelect
+										id="clientId"
+										name="clientId"
+										defaultValue=""
+										placeholder="選択"
+										options={clients.map((c) => ({
+											value: c.id,
+											label: c.name,
+										}))}
+									/>
 								</div>
 							</div>
 							<div className="space-y-2">
 								<Label htmlFor="personInCharge">担当者</Label>
-								<Select name="personInCharge" defaultValue="">
-									<SelectTrigger id="personInCharge">
-										<SelectValue placeholder="選択" />
-									</SelectTrigger>
-									<SelectContent>
-										{staffList.map((s) => (
-											<SelectItem key={s.id} value={s.name}>
-												{s.name}
-											</SelectItem>
-										))}
-									</SelectContent>
-								</Select>
+								<NativeSelect
+									id="personInCharge"
+									name="personInCharge"
+									defaultValue=""
+									placeholder="選択"
+									options={staffList.map((s) => ({
+										value: s.name,
+										label: s.name,
+									}))}
+								/>
 							</div>
 							<Button type="submit" className="w-full" disabled={isSaving}>
 								{isSaving ? "登録中..." : "レシートを登録"}
