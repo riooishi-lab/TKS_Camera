@@ -58,8 +58,14 @@ export function NewReceiptFlow() {
 			});
 
 			if (!res.ok) {
-				const data = await res.json();
-				throw new Error(data.error || "AI解析に失敗しました");
+				let message = "AI解析に失敗しました";
+				try {
+					const data = await res.json();
+					message = data.error || message;
+				} catch {
+					// JSON解析失敗時はデフォルトメッセージ
+				}
+				throw new Error(message);
 			}
 
 			const data = await res.json();
