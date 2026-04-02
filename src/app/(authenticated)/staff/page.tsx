@@ -36,32 +36,32 @@ export default function StaffPage() {
 	const [createOpen, setCreateOpen] = useState(false);
 	const [editTarget, setEditTarget] = useState<Staff | null>(null);
 
+	const reload = async () => setStaffList(await getStaff());
+
 	useEffect(() => {
-		setStaffList(getStaff());
+		reload();
 	}, []);
 
-	const reload = () => setStaffList(getStaff());
-
-	const handleCreate = (e: React.FormEvent<HTMLFormElement>) => {
+	const handleCreate = async (e: React.FormEvent<HTMLFormElement>) => {
 		e.preventDefault();
 		const fd = new FormData(e.currentTarget);
-		saveStaff(fd.get("name") as string);
+		await saveStaff(fd.get("name") as string);
 		setCreateOpen(false);
-		reload();
+		await reload();
 	};
 
-	const handleEdit = (e: React.FormEvent<HTMLFormElement>) => {
+	const handleEdit = async (e: React.FormEvent<HTMLFormElement>) => {
 		e.preventDefault();
 		if (!editTarget) return;
 		const fd = new FormData(e.currentTarget);
-		updateStaff(editTarget.id, { name: fd.get("name") as string });
+		await updateStaff(editTarget.id, { name: fd.get("name") as string });
 		setEditTarget(null);
-		reload();
+		await reload();
 	};
 
-	const handleDelete = (id: string) => {
-		deleteStaff(id);
-		reload();
+	const handleDelete = async (id: string) => {
+		await deleteStaff(id);
+		await reload();
 	};
 
 	return (

@@ -2,7 +2,7 @@
 
 import { Loader2 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -44,9 +44,15 @@ export function NewReceiptFlow() {
 	> | null>(null);
 	const [error, setError] = useState<string | null>(null);
 	const [isSaving, setIsSaving] = useState(false);
-	const [projects] = useState<Project[]>(() => getProjects());
-	const [clients] = useState<Client[]>(() => getClients());
-	const [staffList] = useState<Staff[]>(() => getStaff());
+	const [projects, setProjects] = useState<Project[]>([]);
+	const [clients, setClients] = useState<Client[]>([]);
+	const [staffList, setStaffList] = useState<Staff[]>([]);
+
+	useEffect(() => {
+		getProjects().then(setProjects);
+		getClients().then(setClients);
+		getStaff().then(setStaffList);
+	}, []);
 
 	const handleCapture = useCallback(async (file: File) => {
 		setStep("analyzing");
@@ -85,7 +91,7 @@ export function NewReceiptFlow() {
 		}
 	}, []);
 
-	const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+	const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
 		e.preventDefault();
 		setIsSaving(true);
 
@@ -94,7 +100,7 @@ export function NewReceiptFlow() {
 			const amountStr = fd.get("amount") as string;
 			const taxAmountStr = fd.get("taxAmount") as string;
 
-			saveReceipt({
+			await saveReceipt({
 				date: (fd.get("date") as string) || null,
 				payee: (fd.get("payee") as string) || null,
 				amount: amountStr ? Number.parseInt(amountStr, 10) : null,
@@ -109,7 +115,6 @@ export function NewReceiptFlow() {
 				clientId: (fd.get("clientId") as string) || null,
 				personInCharge: (fd.get("personInCharge") as string) || null,
 				imageUrl: imageBase64,
-				imagePath: "",
 				aiRawResponse,
 				aiConfidence: extraction?.confidence ?? null,
 				isAiVerified: false,

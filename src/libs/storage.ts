@@ -1,7 +1,6 @@
-import type { Receipt } from "@/types/receipt";
+import { supabase } from "./supabase";
 
-const RECEIPTS_KEY = "receipt-scanner:receipts";
-const PROJECTS_KEY = "receipt-scanner:projects";
+// ===== Types =====
 
 export type Project = {
 	id: string;
@@ -12,165 +11,11 @@ export type Project = {
 	createdAt: string;
 };
 
-function generateId(): string {
-	return crypto.randomUUID();
-}
-
-// ===== Receipts =====
-
-export function getReceipts(): Receipt[] {
-	if (typeof window === "undefined") return [];
-	const raw = localStorage.getItem(RECEIPTS_KEY);
-	if (!raw) return [];
-	return JSON.parse(raw);
-}
-
-export function getReceipt(id: string): Receipt | null {
-	return getReceipts().find((r) => r.id === id) ?? null;
-}
-
-export function saveReceipt(
-	data: Omit<Receipt, "id" | "createdAt" | "updatedAt" | "organizationId" | "uploadedBy">,
-): Receipt {
-	const receipts = getReceipts();
-	const now = new Date().toISOString();
-	const receipt: Receipt = {
-		...data,
-		id: generateId(),
-		organizationId: "",
-		uploadedBy: "",
-		createdAt: now,
-		updatedAt: now,
-	};
-	receipts.unshift(receipt);
-	localStorage.setItem(RECEIPTS_KEY, JSON.stringify(receipts));
-	return receipt;
-}
-
-export function updateReceipt(
-	id: string,
-	data: Partial<Omit<Receipt, "id" | "createdAt">>,
-): Receipt | null {
-	const receipts = getReceipts();
-	const index = receipts.findIndex((r) => r.id === id);
-	if (index === -1) return null;
-	receipts[index] = {
-		...receipts[index],
-		...data,
-		updatedAt: new Date().toISOString(),
-	};
-	localStorage.setItem(RECEIPTS_KEY, JSON.stringify(receipts));
-	return receipts[index];
-}
-
-export function deleteReceipt(id: string): boolean {
-	const receipts = getReceipts();
-	const filtered = receipts.filter((r) => r.id !== id);
-	if (filtered.length === receipts.length) return false;
-	localStorage.setItem(RECEIPTS_KEY, JSON.stringify(filtered));
-	return true;
-}
-
-// ===== Projects =====
-
-export function getProjects(): Project[] {
-	if (typeof window === "undefined") return [];
-	const raw = localStorage.getItem(PROJECTS_KEY);
-	if (!raw) return [];
-	return JSON.parse(raw);
-}
-
-export function saveProject(
-	name: string,
-	description: string | null,
-	clientId: string | null = null,
-): Project {
-	const projects = getProjects();
-	const project: Project = {
-		id: generateId(),
-		name,
-		description,
-		clientId,
-		isActive: true,
-		createdAt: new Date().toISOString(),
-	};
-	projects.unshift(project);
-	localStorage.setItem(PROJECTS_KEY, JSON.stringify(projects));
-	return project;
-}
-
-export function updateProject(
-	id: string,
-	data: Partial<Omit<Project, "id" | "createdAt">>,
-): Project | null {
-	const projects = getProjects();
-	const index = projects.findIndex((p) => p.id === id);
-	if (index === -1) return null;
-	projects[index] = { ...projects[index], ...data };
-	localStorage.setItem(PROJECTS_KEY, JSON.stringify(projects));
-	return projects[index];
-}
-
-export function deleteProject(id: string): boolean {
-	const projects = getProjects();
-	const filtered = projects.filter((p) => p.id !== id);
-	if (filtered.length === projects.length) return false;
-	localStorage.setItem(PROJECTS_KEY, JSON.stringify(filtered));
-	return true;
-}
-
-// ===== Clients (顧客企業) =====
-
-const CLIENTS_KEY = "receipt-scanner:clients";
-
 export type Client = {
 	id: string;
 	name: string;
 	createdAt: string;
 };
-
-export function getClients(): Client[] {
-	if (typeof window === "undefined") return [];
-	const raw = localStorage.getItem(CLIENTS_KEY);
-	if (!raw) return [];
-	return JSON.parse(raw);
-}
-
-export function saveClient(name: string): Client {
-	const clients = getClients();
-	const client: Client = {
-		id: generateId(),
-		name,
-		createdAt: new Date().toISOString(),
-	};
-	clients.unshift(client);
-	localStorage.setItem(CLIENTS_KEY, JSON.stringify(clients));
-	return client;
-}
-
-export function updateClient(
-	id: string,
-	data: Partial<Omit<Client, "id" | "createdAt">>,
-): Client | null {
-	const clients = getClients();
-	const index = clients.findIndex((c) => c.id === id);
-	if (index === -1) return null;
-	clients[index] = { ...clients[index], ...data };
-	localStorage.setItem(CLIENTS_KEY, JSON.stringify(clients));
-	return clients[index];
-}
-
-export function deleteClient(id: string): boolean {
-	const clients = getClients();
-	const filtered = clients.filter((c) => c.id !== id);
-	if (filtered.length === clients.length) return false;
-	localStorage.setItem(CLIENTS_KEY, JSON.stringify(filtered));
-	return true;
-}
-
-// ===== Staff (担当者) =====
-
-const STAFF_KEY = "receipt-scanner:staff";
 
 export type Staff = {
 	id: string;
@@ -178,78 +23,278 @@ export type Staff = {
 	createdAt: string;
 };
 
-export function getStaff(): Staff[] {
-	if (typeof window === "undefined") return [];
-	const raw = localStorage.getItem(STAFF_KEY);
-	if (!raw) return [];
-	return JSON.parse(raw);
+export type Receipt = {
+	id: string;
+	date: string | null;
+	payee: string | null;
+	amount: number | null;
+	taxAmount: number | null;
+	taxRateCategory: "8" | "10" | "mixed" | null;
+	accountCategory: string | null;
+	description: string | null;
+	invoiceRegistrationNo: string | null;
+	projectId: string | null;
+	clientId: string | null;
+	personInCharge: string | null;
+	imageUrl: string;
+	aiRawResponse: Record<string, unknown> | null;
+	aiConfidence: number | null;
+	isAiVerified: boolean;
+	createdAt: string;
+	updatedAt: string;
+};
+
+// ===== Receipts =====
+
+export async function getReceipts(): Promise<Receipt[]> {
+	const { data } = await supabase
+		.from("tks_receipts")
+		.select("*")
+		.order("created_at", { ascending: false });
+	return (data ?? []).map(mapReceipt);
 }
 
-export function saveStaff(name: string): Staff {
-	const staffList = getStaff();
-	const staff: Staff = {
-		id: generateId(),
-		name,
-		createdAt: new Date().toISOString(),
-	};
-	staffList.unshift(staff);
-	localStorage.setItem(STAFF_KEY, JSON.stringify(staffList));
-	return staff;
+export async function getReceipt(id: string): Promise<Receipt | null> {
+	const { data } = await supabase
+		.from("tks_receipts")
+		.select("*")
+		.eq("id", id)
+		.single();
+	return data ? mapReceipt(data) : null;
 }
 
-export function updateStaff(
+export async function saveReceipt(
+	input: Omit<Receipt, "id" | "createdAt" | "updatedAt">,
+): Promise<Receipt> {
+	const { data, error } = await supabase
+		.from("tks_receipts")
+		.insert({
+			date: input.date,
+			payee: input.payee,
+			amount: input.amount,
+			tax_amount: input.taxAmount,
+			tax_rate_category: input.taxRateCategory,
+			account_category: input.accountCategory,
+			description: input.description,
+			invoice_registration_no: input.invoiceRegistrationNo,
+			project_id: input.projectId,
+			client_id: input.clientId,
+			person_in_charge: input.personInCharge,
+			image_url: input.imageUrl,
+			ai_raw_response: input.aiRawResponse,
+			ai_confidence: input.aiConfidence,
+			is_ai_verified: input.isAiVerified,
+		})
+		.select()
+		.single();
+	if (error) throw new Error(error.message);
+	return mapReceipt(data);
+}
+
+export async function updateReceipt(
 	id: string,
-	data: Partial<Omit<Staff, "id" | "createdAt">>,
-): Staff | null {
-	const staffList = getStaff();
-	const index = staffList.findIndex((s) => s.id === id);
-	if (index === -1) return null;
-	staffList[index] = { ...staffList[index], ...data };
-	localStorage.setItem(STAFF_KEY, JSON.stringify(staffList));
-	return staffList[index];
+	input: Partial<Omit<Receipt, "id" | "createdAt">>,
+): Promise<Receipt | null> {
+	const row: Record<string, unknown> = { updated_at: new Date().toISOString() };
+	if (input.date !== undefined) row.date = input.date;
+	if (input.payee !== undefined) row.payee = input.payee;
+	if (input.amount !== undefined) row.amount = input.amount;
+	if (input.taxAmount !== undefined) row.tax_amount = input.taxAmount;
+	if (input.taxRateCategory !== undefined) row.tax_rate_category = input.taxRateCategory;
+	if (input.accountCategory !== undefined) row.account_category = input.accountCategory;
+	if (input.description !== undefined) row.description = input.description;
+	if (input.invoiceRegistrationNo !== undefined) row.invoice_registration_no = input.invoiceRegistrationNo;
+	if (input.projectId !== undefined) row.project_id = input.projectId;
+	if (input.clientId !== undefined) row.client_id = input.clientId;
+	if (input.personInCharge !== undefined) row.person_in_charge = input.personInCharge;
+	if (input.isAiVerified !== undefined) row.is_ai_verified = input.isAiVerified;
+
+	const { data } = await supabase
+		.from("tks_receipts")
+		.update(row)
+		.eq("id", id)
+		.select()
+		.single();
+	return data ? mapReceipt(data) : null;
 }
 
-export function deleteStaff(id: string): boolean {
-	const staffList = getStaff();
-	const filtered = staffList.filter((s) => s.id !== id);
-	if (filtered.length === staffList.length) return false;
-	localStorage.setItem(STAFF_KEY, JSON.stringify(filtered));
-	return true;
+export async function deleteReceipt(id: string): Promise<boolean> {
+	const { error } = await supabase.from("tks_receipts").delete().eq("id", id);
+	return !error;
 }
 
-// ===== Seed Data (初期データ) =====
+function mapReceipt(r: Record<string, unknown>): Receipt {
+	return {
+		id: r.id as string,
+		date: r.date as string | null,
+		payee: r.payee as string | null,
+		amount: r.amount as number | null,
+		taxAmount: r.tax_amount as number | null,
+		taxRateCategory: r.tax_rate_category as "8" | "10" | "mixed" | null,
+		accountCategory: r.account_category as string | null,
+		description: r.description as string | null,
+		invoiceRegistrationNo: r.invoice_registration_no as string | null,
+		projectId: r.project_id as string | null,
+		clientId: r.client_id as string | null,
+		personInCharge: r.person_in_charge as string | null,
+		imageUrl: r.image_url as string,
+		aiRawResponse: r.ai_raw_response as Record<string, unknown> | null,
+		aiConfidence: r.ai_confidence as number | null,
+		isAiVerified: r.is_ai_verified as boolean,
+		createdAt: r.created_at as string,
+		updatedAt: r.updated_at as string,
+	};
+}
 
-const SEED_KEY = "receipt-scanner:seeded";
+// ===== Projects =====
 
-export function seedIfEmpty(): void {
-	if (typeof window === "undefined") return;
-	if (localStorage.getItem(SEED_KEY)) return;
+export async function getProjects(): Promise<Project[]> {
+	const { data } = await supabase
+		.from("tks_projects")
+		.select("*")
+		.order("created_at", { ascending: false });
+	return (data ?? []).map(mapProject);
+}
 
-	// プロジェクト5件
-	const projectNames = [
-		"東京駅前ビル改修工事",
-		"大阪支社オフィス移転",
-		"名古屋新工場建設",
-		"福岡商業施設リニューアル",
-		"札幌マンション新築",
-	];
-	for (const name of projectNames) {
-		saveProject(name, null);
-	}
+export async function saveProject(
+	name: string,
+	description: string | null,
+	clientId: string | null = null,
+): Promise<Project> {
+	const { data, error } = await supabase
+		.from("tks_projects")
+		.insert({ name, description, client_id: clientId })
+		.select()
+		.single();
+	if (error) throw new Error(error.message);
+	return mapProject(data);
+}
 
-	// 企業3社
-	const clientNames = ["株式会社山田建設", "有限会社鈴木工務店", "合同会社佐藤設計"];
-	for (const name of clientNames) {
-		saveClient(name);
-	}
+export async function updateProject(
+	id: string,
+	input: Partial<Omit<Project, "id" | "createdAt">>,
+): Promise<Project | null> {
+	const row: Record<string, unknown> = {};
+	if (input.name !== undefined) row.name = input.name;
+	if (input.description !== undefined) row.description = input.description;
+	if (input.clientId !== undefined) row.client_id = input.clientId;
+	if (input.isActive !== undefined) row.is_active = input.isActive;
 
-	// 担当2名
-	const staffNames = ["田中太郎", "佐藤花子"];
-	for (const name of staffNames) {
-		saveStaff(name);
-	}
+	const { data } = await supabase
+		.from("tks_projects")
+		.update(row)
+		.eq("id", id)
+		.select()
+		.single();
+	return data ? mapProject(data) : null;
+}
 
-	localStorage.setItem(SEED_KEY, "true");
+export async function deleteProject(id: string): Promise<boolean> {
+	const { error } = await supabase.from("tks_projects").delete().eq("id", id);
+	return !error;
+}
+
+function mapProject(p: Record<string, unknown>): Project {
+	return {
+		id: p.id as string,
+		name: p.name as string,
+		description: p.description as string | null,
+		clientId: p.client_id as string | null,
+		isActive: p.is_active as boolean,
+		createdAt: p.created_at as string,
+	};
+}
+
+// ===== Clients =====
+
+export async function getClients(): Promise<Client[]> {
+	const { data } = await supabase
+		.from("tks_clients")
+		.select("*")
+		.order("created_at", { ascending: false });
+	return (data ?? []).map(mapClient);
+}
+
+export async function saveClient(name: string): Promise<Client> {
+	const { data, error } = await supabase
+		.from("tks_clients")
+		.insert({ name })
+		.select()
+		.single();
+	if (error) throw new Error(error.message);
+	return mapClient(data);
+}
+
+export async function updateClient(
+	id: string,
+	input: Partial<Omit<Client, "id" | "createdAt">>,
+): Promise<Client | null> {
+	const { data } = await supabase
+		.from("tks_clients")
+		.update(input)
+		.eq("id", id)
+		.select()
+		.single();
+	return data ? mapClient(data) : null;
+}
+
+export async function deleteClient(id: string): Promise<boolean> {
+	const { error } = await supabase.from("tks_clients").delete().eq("id", id);
+	return !error;
+}
+
+function mapClient(c: Record<string, unknown>): Client {
+	return {
+		id: c.id as string,
+		name: c.name as string,
+		createdAt: c.created_at as string,
+	};
+}
+
+// ===== Staff =====
+
+export async function getStaff(): Promise<Staff[]> {
+	const { data } = await supabase
+		.from("tks_staff")
+		.select("*")
+		.order("created_at", { ascending: false });
+	return (data ?? []).map(mapStaff);
+}
+
+export async function saveStaff(name: string): Promise<Staff> {
+	const { data, error } = await supabase
+		.from("tks_staff")
+		.insert({ name })
+		.select()
+		.single();
+	if (error) throw new Error(error.message);
+	return mapStaff(data);
+}
+
+export async function updateStaff(
+	id: string,
+	input: Partial<Omit<Staff, "id" | "createdAt">>,
+): Promise<Staff | null> {
+	const { data } = await supabase
+		.from("tks_staff")
+		.update(input)
+		.eq("id", id)
+		.select()
+		.single();
+	return data ? mapStaff(data) : null;
+}
+
+export async function deleteStaff(id: string): Promise<boolean> {
+	const { error } = await supabase.from("tks_staff").delete().eq("id", id);
+	return !error;
+}
+
+function mapStaff(s: Record<string, unknown>): Staff {
+	return {
+		id: s.id as string,
+		name: s.name as string,
+		createdAt: s.created_at as string,
+	};
 }
 
 // ===== Image =====

@@ -1,5 +1,4 @@
 import { NavBar } from "./components/NavBar";
-import { SeedData } from "./components/SeedData";
 
 export default function AuthenticatedLayout({
 	children,
@@ -8,7 +7,6 @@ export default function AuthenticatedLayout({
 }) {
 	return (
 		<div className="min-h-screen bg-background">
-			<SeedData />
 			<NavBar />
 			<main className="container mx-auto px-4 py-6">{children}</main>
 		</div>

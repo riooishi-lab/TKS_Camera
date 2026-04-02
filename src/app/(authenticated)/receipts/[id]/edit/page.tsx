@@ -28,36 +28,40 @@ import {
 	getStaff,
 	updateReceipt,
 } from "@/libs/storage";
-import type { Receipt } from "@/types/receipt";
+import type { Receipt } from "@/libs/storage";
 
 export default function EditReceiptPage() {
 	const params = useParams<{ id: string }>();
 	const router = useRouter();
 	const [receipt, setReceipt] = useState<Receipt | null>(null);
-	const [projects] = useState<Project[]>(() => getProjects());
-	const [clients] = useState<Client[]>(() => getClients());
-	const [staffList] = useState<Staff[]>(() => getStaff());
+	const [projects, setProjects] = useState<Project[]>([]);
+	const [clients, setClients] = useState<Client[]>([]);
+	const [staffList, setStaffList] = useState<Staff[]>([]);
 	const [isSaving, setIsSaving] = useState(false);
 
 	useEffect(() => {
-		const r = getReceipt(params.id);
-		if (!r) {
-			router.replace(PAGE_PATH.receipts);
-			return;
-		}
-		setReceipt(r);
+		getReceipt(params.id).then((r) => {
+			if (!r) {
+				router.replace(PAGE_PATH.receipts);
+				return;
+			}
+			setReceipt(r);
+		});
+		getProjects().then(setProjects);
+		getClients().then(setClients);
+		getStaff().then(setStaffList);
 	}, [params.id, router]);
 
 	if (!receipt) return null;
 
-	const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+	const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
 		e.preventDefault();
 		setIsSaving(true);
 		const fd = new FormData(e.currentTarget);
 		const amountStr = fd.get("amount") as string;
 		const taxAmountStr = fd.get("taxAmount") as string;
 
-		updateReceipt(params.id, {
+		await updateReceipt(params.id, {
 			date: (fd.get("date") as string) || null,
 			payee: (fd.get("payee") as string) || null,
 			amount: amountStr ? Number.parseInt(amountStr, 10) : null,
@@ -74,7 +78,7 @@ export default function EditReceiptPage() {
 			isAiVerified: true,
 		});
 
-		router.push(PAGE_PATH.receiptDetail(params.id));
+		window.location.href = PAGE_PATH.receiptDetail(params.id);
 	};
 
 	return (

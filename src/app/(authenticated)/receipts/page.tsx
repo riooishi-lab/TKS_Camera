@@ -14,8 +14,7 @@ import {
 	TableRow,
 } from "@/components/ui/table";
 import { PAGE_PATH } from "@/constants/pagePath";
-import { getReceipts } from "@/libs/storage";
-import type { Receipt } from "@/types/receipt";
+import { type Receipt, getReceipts } from "@/libs/storage";
 import { formatCurrency } from "@/utils/formatCurrency";
 import { formatDate } from "@/utils/formatDate";
 
@@ -23,7 +22,7 @@ export default function ReceiptsPage() {
 	const [receipts, setReceipts] = useState<Receipt[]>([]);
 
 	useEffect(() => {
-		setReceipts(getReceipts());
+		getReceipts().then(setReceipts);
 	}, []);
 
 	return (

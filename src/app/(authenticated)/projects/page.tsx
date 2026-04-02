@@ -48,50 +48,49 @@ export default function ProjectsPage() {
 	const [createOpen, setCreateOpen] = useState(false);
 	const [editTarget, setEditTarget] = useState<Project | null>(null);
 
-	useEffect(() => {
-		setProjects(getProjects());
-		setClients(getClients());
-	}, []);
-
-	const reload = () => {
-		setProjects(getProjects());
-		setClients(getClients());
+	const reload = async () => {
+		setProjects(await getProjects());
+		setClients(await getClients());
 	};
+
+	useEffect(() => {
+		reload();
+	}, []);
 
 	const clientName = (clientId: string | null | undefined) => {
 		if (!clientId) return "-";
 		return clients.find((c) => c.id === clientId)?.name ?? "-";
 	};
 
-	const handleCreate = (e: React.FormEvent<HTMLFormElement>) => {
+	const handleCreate = async (e: React.FormEvent<HTMLFormElement>) => {
 		e.preventDefault();
 		const fd = new FormData(e.currentTarget);
-		saveProject(
+		await saveProject(
 			fd.get("name") as string,
 			(fd.get("description") as string) || null,
 			(fd.get("clientId") as string) || null,
 		);
 		setCreateOpen(false);
-		reload();
+		await reload();
 	};
 
-	const handleEdit = (e: React.FormEvent<HTMLFormElement>) => {
+	const handleEdit = async (e: React.FormEvent<HTMLFormElement>) => {
 		e.preventDefault();
 		if (!editTarget) return;
 		const fd = new FormData(e.currentTarget);
-		updateProject(editTarget.id, {
+		await updateProject(editTarget.id, {
 			name: fd.get("name") as string,
 			description: (fd.get("description") as string) || null,
 			clientId: (fd.get("clientId") as string) || null,
 			isActive: fd.get("isActive") === "true",
 		});
 		setEditTarget(null);
-		reload();
+		await reload();
 	};
 
-	const handleDelete = (id: string) => {
-		deleteProject(id);
-		reload();
+	const handleDelete = async (id: string) => {
+		await deleteProject(id);
+		await reload();
 	};
 
 	return (

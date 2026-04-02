@@ -18,8 +18,7 @@ import {
 } from "@/components/ui/dialog";
 import { Separator } from "@/components/ui/separator";
 import { PAGE_PATH } from "@/constants/pagePath";
-import { deleteReceipt, getReceipt } from "@/libs/storage";
-import type { Receipt } from "@/types/receipt";
+import { type Receipt, deleteReceipt, getReceipt } from "@/libs/storage";
 import { formatCurrency } from "@/utils/formatCurrency";
 import { formatDate } from "@/utils/formatDate";
 
@@ -29,12 +28,13 @@ export default function ReceiptDetailPage() {
 	const [receipt, setReceipt] = useState<Receipt | null>(null);
 
 	useEffect(() => {
-		const r = getReceipt(params.id);
-		if (!r) {
-			router.replace(PAGE_PATH.receipts);
-			return;
-		}
-		setReceipt(r);
+		getReceipt(params.id).then((r) => {
+			if (!r) {
+				router.replace(PAGE_PATH.receipts);
+				return;
+			}
+			setReceipt(r);
+		});
 	}, [params.id, router]);
 
 	if (!receipt) return null;
@@ -48,9 +48,9 @@ export default function ReceiptDetailPage() {
 					? "混在"
 					: null;
 
-	const handleDelete = () => {
-		deleteReceipt(receipt.id);
-		router.push(PAGE_PATH.receipts);
+	const handleDelete = async () => {
+		await deleteReceipt(receipt.id);
+		window.location.href = PAGE_PATH.receipts;
 	};
 
 	return (

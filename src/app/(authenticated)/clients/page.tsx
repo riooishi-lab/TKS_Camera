@@ -36,32 +36,32 @@ export default function ClientsPage() {
 	const [createOpen, setCreateOpen] = useState(false);
 	const [editTarget, setEditTarget] = useState<Client | null>(null);
 
+	const reload = async () => setClients(await getClients());
+
 	useEffect(() => {
-		setClients(getClients());
+		reload();
 	}, []);
 
-	const reload = () => setClients(getClients());
-
-	const handleCreate = (e: React.FormEvent<HTMLFormElement>) => {
+	const handleCreate = async (e: React.FormEvent<HTMLFormElement>) => {
 		e.preventDefault();
 		const fd = new FormData(e.currentTarget);
-		saveClient(fd.get("name") as string);
+		await saveClient(fd.get("name") as string);
 		setCreateOpen(false);
-		reload();
+		await reload();
 	};
 
-	const handleEdit = (e: React.FormEvent<HTMLFormElement>) => {
+	const handleEdit = async (e: React.FormEvent<HTMLFormElement>) => {
 		e.preventDefault();
 		if (!editTarget) return;
 		const fd = new FormData(e.currentTarget);
-		updateClient(editTarget.id, { name: fd.get("name") as string });
+		await updateClient(editTarget.id, { name: fd.get("name") as string });
 		setEditTarget(null);
-		reload();
+		await reload();
 	};
 
-	const handleDelete = (id: string) => {
-		deleteClient(id);
-		reload();
+	const handleDelete = async (id: string) => {
+		await deleteClient(id);
+		await reload();
 	};
 
 	return (
