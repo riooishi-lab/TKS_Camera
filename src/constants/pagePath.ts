@@ -8,5 +8,6 @@ export const PAGE_PATH = {
 	clients: "/clients",
 	staff: "/staff",
 	reports: "/reports",
+	users: "/settings/users",
 	settings: "/settings",
 } as const;

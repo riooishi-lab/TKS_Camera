@@ -1,7 +1,7 @@
 "use client";
 
 import { Pencil, Plus, Trash2 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
 	Dialog,
@@ -36,11 +36,11 @@ export default function ClientsPage() {
 	const [createOpen, setCreateOpen] = useState(false);
 	const [editTarget, setEditTarget] = useState<Client | null>(null);
 
-	const reload = async () => setClients(await getClients());
+	const reload = useCallback(async () => setClients(await getClients()), []);
 
 	useEffect(() => {
 		reload();
-	}, []);
+	}, [reload]);
 
 	const handleCreate = async (e: React.FormEvent<HTMLFormElement>) => {
 		e.preventDefault();

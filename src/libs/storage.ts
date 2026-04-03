@@ -23,6 +23,21 @@ export type Staff = {
 	createdAt: string;
 };
 
+export type UserRole = "admin" | "editor" | "viewer";
+export type UserStatus = "pending" | "active";
+
+export type TksUser = {
+	id: string;
+	firebaseUid: string | null;
+	email: string;
+	name: string | null;
+	role: UserRole;
+	status: UserStatus;
+	inviteCode: string | null;
+	invitedBy: string | null;
+	createdAt: string;
+};
+
 export type Receipt = {
 	id: string;
 	date: string | null;
@@ -100,13 +115,17 @@ export async function updateReceipt(
 	if (input.payee !== undefined) row.payee = input.payee;
 	if (input.amount !== undefined) row.amount = input.amount;
 	if (input.taxAmount !== undefined) row.tax_amount = input.taxAmount;
-	if (input.taxRateCategory !== undefined) row.tax_rate_category = input.taxRateCategory;
-	if (input.accountCategory !== undefined) row.account_category = input.accountCategory;
+	if (input.taxRateCategory !== undefined)
+		row.tax_rate_category = input.taxRateCategory;
+	if (input.accountCategory !== undefined)
+		row.account_category = input.accountCategory;
 	if (input.description !== undefined) row.description = input.description;
-	if (input.invoiceRegistrationNo !== undefined) row.invoice_registration_no = input.invoiceRegistrationNo;
+	if (input.invoiceRegistrationNo !== undefined)
+		row.invoice_registration_no = input.invoiceRegistrationNo;
 	if (input.projectId !== undefined) row.project_id = input.projectId;
 	if (input.clientId !== undefined) row.client_id = input.clientId;
-	if (input.personInCharge !== undefined) row.person_in_charge = input.personInCharge;
+	if (input.personInCharge !== undefined)
+		row.person_in_charge = input.personInCharge;
 	if (input.isAiVerified !== undefined) row.is_ai_verified = input.isAiVerified;
 
 	const { data } = await getSupabase()
@@ -119,7 +138,10 @@ export async function updateReceipt(
 }
 
 export async function deleteReceipt(id: string): Promise<boolean> {
-	const { error } = await getSupabase().from("tks_receipts").delete().eq("id", id);
+	const { error } = await getSupabase()
+		.from("tks_receipts")
+		.delete()
+		.eq("id", id);
 	return !error;
 }
 
@@ -190,7 +212,10 @@ export async function updateProject(
 }
 
 export async function deleteProject(id: string): Promise<boolean> {
-	const { error } = await getSupabase().from("tks_projects").delete().eq("id", id);
+	const { error } = await getSupabase()
+		.from("tks_projects")
+		.delete()
+		.eq("id", id);
 	return !error;
 }
 
@@ -239,7 +264,10 @@ export async function updateClient(
 }
 
 export async function deleteClient(id: string): Promise<boolean> {
-	const { error } = await getSupabase().from("tks_clients").delete().eq("id", id);
+	const { error } = await getSupabase()
+		.from("tks_clients")
+		.delete()
+		.eq("id", id);
 	return !error;
 }
 
@@ -294,6 +322,114 @@ function mapStaff(s: Record<string, unknown>): Staff {
 		id: s.id as string,
 		name: s.name as string,
 		createdAt: s.created_at as string,
+	};
+}
+
+// ===== Users =====
+
+export async function getUserByFirebaseUid(
+	uid: string,
+): Promise<TksUser | null> {
+	const { data } = await getSupabase()
+		.from("tks_users")
+		.select("*")
+		.eq("firebase_uid", uid)
+		.single();
+	return data ? mapUser(data) : null;
+}
+
+export async function getUserByEmail(email: string): Promise<TksUser | null> {
+	const { data } = await getSupabase()
+		.from("tks_users")
+		.select("*")
+		.eq("email", email)
+		.single();
+	return data ? mapUser(data) : null;
+}
+
+export async function getUserByInviteCode(
+	code: string,
+): Promise<TksUser | null> {
+	const { data } = await getSupabase()
+		.from("tks_users")
+		.select("*")
+		.eq("invite_code", code)
+		.eq("status", "pending")
+		.single();
+	return data ? mapUser(data) : null;
+}
+
+export async function getUsers(): Promise<TksUser[]> {
+	const { data } = await getSupabase()
+		.from("tks_users")
+		.select("*")
+		.order("created_at", { ascending: false });
+	return (data ?? []).map(mapUser);
+}
+
+export async function createUser(input: {
+	email: string;
+	role: UserRole;
+	inviteCode: string;
+	invitedBy: string | null;
+}): Promise<TksUser> {
+	const { data, error } = await getSupabase()
+		.from("tks_users")
+		.insert({
+			email: input.email,
+			role: input.role,
+			invite_code: input.inviteCode,
+			invited_by: input.invitedBy,
+			status: "pending",
+		})
+		.select()
+		.single();
+	if (error) throw new Error(error.message);
+	return mapUser(data);
+}
+
+export async function updateUser(
+	id: string,
+	input: Partial<{
+		firebaseUid: string;
+		email: string;
+		name: string;
+		role: UserRole;
+		status: UserStatus;
+	}>,
+): Promise<TksUser | null> {
+	const row: Record<string, unknown> = {};
+	if (input.firebaseUid !== undefined) row.firebase_uid = input.firebaseUid;
+	if (input.email !== undefined) row.email = input.email;
+	if (input.name !== undefined) row.name = input.name;
+	if (input.role !== undefined) row.role = input.role;
+	if (input.status !== undefined) row.status = input.status;
+
+	const { data } = await getSupabase()
+		.from("tks_users")
+		.update(row)
+		.eq("id", id)
+		.select()
+		.single();
+	return data ? mapUser(data) : null;
+}
+
+export async function deleteUser(id: string): Promise<boolean> {
+	const { error } = await getSupabase().from("tks_users").delete().eq("id", id);
+	return !error;
+}
+
+function mapUser(u: Record<string, unknown>): TksUser {
+	return {
+		id: u.id as string,
+		firebaseUid: u.firebase_uid as string | null,
+		email: u.email as string,
+		name: u.name as string | null,
+		role: u.role as UserRole,
+		status: u.status as UserStatus,
+		inviteCode: u.invite_code as string | null,
+		invitedBy: u.invited_by as string | null,
+		createdAt: u.created_at as string,
 	};
 }
 

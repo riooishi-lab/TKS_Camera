@@ -14,16 +14,97 @@ import {
 	TableRow,
 } from "@/components/ui/table";
 import { PAGE_PATH } from "@/constants/pagePath";
+import { useAuth } from "@/contexts/AuthContext";
 import {
 	type Client,
-	type Project,
-	type Receipt,
 	getClients,
 	getProjects,
 	getReceipts,
+	type Project,
+	type Receipt,
 } from "@/libs/storage";
 import { formatCurrency } from "@/utils/formatCurrency";
 import { formatDate } from "@/utils/formatDate";
+
+function ReceiptRow({
+	receipt,
+	projectMap,
+	clientMap,
+}: {
+	receipt: Receipt;
+	projectMap: Map<string, string>;
+	clientMap: Map<string, string>;
+}) {
+	return (
+		<TableRow>
+			<TableCell>
+				<Link
+					href={PAGE_PATH.receiptDetail(receipt.id)}
+					className="hover:underline"
+				>
+					{receipt.date ? formatDate(receipt.date) : "未設定"}
+				</Link>
+			</TableCell>
+			<TableCell>
+				<Link
+					href={PAGE_PATH.receiptDetail(receipt.id)}
+					className="hover:underline"
+				>
+					{receipt.payee ?? "未設定"}
+				</Link>
+			</TableCell>
+			<TableCell className="text-right">
+				{receipt.amount != null ? formatCurrency(receipt.amount) : "-"}
+			</TableCell>
+			<TableCell className="hidden sm:table-cell">
+				{receipt.accountCategory ?? "-"}
+			</TableCell>
+			<TableCell className="hidden sm:table-cell">
+				{receipt.projectId ? (projectMap.get(receipt.projectId) ?? "-") : "-"}
+			</TableCell>
+			<TableCell className="hidden sm:table-cell">
+				{receipt.clientId ? (clientMap.get(receipt.clientId) ?? "-") : "-"}
+			</TableCell>
+			<TableCell>
+				{receipt.isAiVerified ? (
+					<Badge variant="default">確認済</Badge>
+				) : (
+					<Badge variant="secondary">未確認</Badge>
+				)}
+			</TableCell>
+		</TableRow>
+	);
+}
+
+const FILTER_SELECT_CLASS =
+	"h-8 rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none focus-visible:border-ring";
+
+function FilterSelect({
+	value,
+	onChange,
+	placeholder,
+	options,
+}: {
+	value: string;
+	onChange: (v: string) => void;
+	placeholder: string;
+	options: { value: string; label: string }[];
+}) {
+	return (
+		<select
+			value={value}
+			onChange={(e) => onChange(e.target.value)}
+			className={FILTER_SELECT_CLASS}
+		>
+			<option value="">{placeholder}</option>
+			{options.map((o) => (
+				<option key={o.value} value={o.value}>
+					{o.label}
+				</option>
+			))}
+		</select>
+	);
+}
 
 function getYearMonth(date: string): string {
 	return date.slice(0, 7); // "YYYY-MM"
@@ -35,6 +116,8 @@ function formatYearMonth(ym: string): string {
 }
 
 export default function ReceiptsPage() {
+	const { tksUser } = useAuth();
+	const canCreate = tksUser?.role === "admin" || tksUser?.role === "editor";
 	const [receipts, setReceipts] = useState<Receipt[]>([]);
 	const [projects, setProjects] = useState<Project[]>([]);
 	const [clients, setClients] = useState<Client[]>([]);
@@ -50,10 +133,9 @@ export default function ReceiptsPage() {
 	}, []);
 
 	const months = useMemo(() => {
-		const set = new Set<string>();
-		for (const r of receipts) {
-			if (r.date) set.add(getYearMonth(r.date));
-		}
+		const set = new Set(
+			receipts.filter((r) => r.date).map((r) => getYearMonth(r.date!)),
+		);
 		return Array.from(set).sort().reverse();
 	}, [receipts]);
 
@@ -62,7 +144,6 @@ export default function ReceiptsPage() {
 		for (const p of projects) m.set(p.id, p.name);
 		return m;
 	}, [projects]);
-
 	const clientMap = useMemo(() => {
 		const m = new Map<string, string>();
 		for (const c of clients) m.set(c.id, c.name);
@@ -79,15 +160,14 @@ export default function ReceiptsPage() {
 		});
 	}, [receipts, filterMonth, filterProject, filterClient]);
 
-	const summary = useMemo(() => {
-		let total = 0;
-		let taxTotal = 0;
-		for (const r of filtered) {
-			total += r.amount ?? 0;
-			taxTotal += r.taxAmount ?? 0;
-		}
-		return { count: filtered.length, total, taxTotal };
-	}, [filtered]);
+	const summary = useMemo(
+		() => ({
+			count: filtered.length,
+			total: filtered.reduce((sum, r) => sum + (r.amount ?? 0), 0),
+			taxTotal: filtered.reduce((sum, r) => sum + (r.taxAmount ?? 0), 0),
+		}),
+		[filtered],
+	);
 
 	const hasFilter = filterMonth || filterProject || filterClient;
 
@@ -95,50 +175,37 @@ export default function ReceiptsPage() {
 		<div>
 			<div className="flex items-center justify-between">
 				<h1 className="text-2xl font-bold">レシート一覧</h1>
-				<Button render={<Link href={PAGE_PATH.receiptNew} />}>
-					<Plus className="mr-2 h-4 w-4" />
-					レシート登録
-				</Button>
+				{canCreate && (
+					<Button render={<Link href={PAGE_PATH.receiptNew} />}>
+						<Plus className="mr-2 h-4 w-4" />
+						レシート登録
+					</Button>
+				)}
 			</div>
 
 			{/* フィルター */}
 			<div className="mt-4 flex flex-wrap items-center gap-2">
-				<select
+				<FilterSelect
 					value={filterMonth}
-					onChange={(e) => setFilterMonth(e.target.value)}
-					className="h-8 rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none focus-visible:border-ring"
-				>
-					<option value="">全期間</option>
-					{months.map((ym) => (
-						<option key={ym} value={ym}>
-							{formatYearMonth(ym)}
-						</option>
-					))}
-				</select>
-				<select
+					onChange={setFilterMonth}
+					placeholder="全期間"
+					options={months.map((ym) => ({
+						value: ym,
+						label: formatYearMonth(ym),
+					}))}
+				/>
+				<FilterSelect
 					value={filterClient}
-					onChange={(e) => setFilterClient(e.target.value)}
-					className="h-8 rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none focus-visible:border-ring"
-				>
-					<option value="">全顧客</option>
-					{clients.map((c) => (
-						<option key={c.id} value={c.id}>
-							{c.name}
-						</option>
-					))}
-				</select>
-				<select
+					onChange={setFilterClient}
+					placeholder="全顧客"
+					options={clients.map((c) => ({ value: c.id, label: c.name }))}
+				/>
+				<FilterSelect
 					value={filterProject}
-					onChange={(e) => setFilterProject(e.target.value)}
-					className="h-8 rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none focus-visible:border-ring"
-				>
-					<option value="">全PJ</option>
-					{projects.map((p) => (
-						<option key={p.id} value={p.id}>
-							{p.name}
-						</option>
-					))}
-				</select>
+					onChange={setFilterProject}
+					placeholder="全PJ"
+					options={projects.map((p) => ({ value: p.id, label: p.name }))}
+				/>
 				{hasFilter && (
 					<button
 						type="button"
@@ -162,9 +229,7 @@ export default function ReceiptsPage() {
 				</span>
 				<span>
 					<span className="text-muted-foreground">合計:</span>{" "}
-					<span className="font-semibold">
-						{formatCurrency(summary.total)}
-					</span>
+					<span className="font-semibold">{formatCurrency(summary.total)}</span>
 				</span>
 				<span>
 					<span className="text-muted-foreground">税額:</span>{" "}
@@ -182,9 +247,7 @@ export default function ReceiptsPage() {
 								<TableHead>日付</TableHead>
 								<TableHead>支払先</TableHead>
 								<TableHead className="text-right">金額</TableHead>
-								<TableHead className="hidden sm:table-cell">
-									勘定科目
-								</TableHead>
+								<TableHead className="hidden sm:table-cell">勘定科目</TableHead>
 								<TableHead className="hidden sm:table-cell">PJ</TableHead>
 								<TableHead className="hidden sm:table-cell">顧客</TableHead>
 								<TableHead>状態</TableHead>
@@ -192,49 +255,12 @@ export default function ReceiptsPage() {
 						</TableHeader>
 						<TableBody>
 							{filtered.map((receipt) => (
-								<TableRow key={receipt.id}>
-									<TableCell>
-										<Link
-											href={PAGE_PATH.receiptDetail(receipt.id)}
-											className="hover:underline"
-										>
-											{receipt.date ? formatDate(receipt.date) : "未設定"}
-										</Link>
-									</TableCell>
-									<TableCell>
-										<Link
-											href={PAGE_PATH.receiptDetail(receipt.id)}
-											className="hover:underline"
-										>
-											{receipt.payee ?? "未設定"}
-										</Link>
-									</TableCell>
-									<TableCell className="text-right">
-										{receipt.amount != null
-											? formatCurrency(receipt.amount)
-											: "-"}
-									</TableCell>
-									<TableCell className="hidden sm:table-cell">
-										{receipt.accountCategory ?? "-"}
-									</TableCell>
-									<TableCell className="hidden sm:table-cell">
-										{receipt.projectId
-											? projectMap.get(receipt.projectId) ?? "-"
-											: "-"}
-									</TableCell>
-									<TableCell className="hidden sm:table-cell">
-										{receipt.clientId
-											? clientMap.get(receipt.clientId) ?? "-"
-											: "-"}
-									</TableCell>
-									<TableCell>
-										{receipt.isAiVerified ? (
-											<Badge variant="default">確認済</Badge>
-										) : (
-											<Badge variant="secondary">未確認</Badge>
-										)}
-									</TableCell>
-								</TableRow>
+								<ReceiptRow
+									key={receipt.id}
+									receipt={receipt}
+									projectMap={projectMap}
+									clientMap={clientMap}
+								/>
 							))}
 						</TableBody>
 					</Table>
@@ -246,7 +272,7 @@ export default function ReceiptsPage() {
 							? "該当するレシートがありません"
 							: "レシートがまだ登録されていません"}
 					</p>
-					{!hasFilter && (
+					{!hasFilter && canCreate && (
 						<Button
 							render={<Link href={PAGE_PATH.receiptNew} />}
 							variant="outline"

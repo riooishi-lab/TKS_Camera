@@ -4,11 +4,11 @@ import { useEffect, useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
 	type Client,
-	type Project,
-	type Receipt,
 	getClients,
 	getProjects,
 	getReceipts,
+	type Project,
+	type Receipt,
 } from "@/libs/storage";
 import { formatCurrency } from "@/utils/formatCurrency";
 
@@ -21,13 +21,53 @@ function formatYearMonth(ym: string): string {
 	return `${y}年${Number(m)}月`;
 }
 
+function createIdNameMap<T extends { id: string; name: string }>(
+	items: T[],
+): Map<string, string> {
+	const m = new Map<string, string>();
+	for (const item of items) m.set(item.id, item.name);
+	return m;
+}
+
+function SummaryCard({ label, value }: { label: string; value: string }) {
+	return (
+		<Card>
+			<CardContent className="pt-4 pb-3 text-center">
+				<p className="text-xs text-muted-foreground">{label}</p>
+				<p className="text-xl font-bold">{value}</p>
+			</CardContent>
+		</Card>
+	);
+}
+
 type SummaryRow = { label: string; amount: number; count: number };
+
+function aggregateByKey(
+	receipts: Receipt[],
+	keyFn: (r: Receipt) => string | null,
+): SummaryRow[] {
+	const map = new Map<string, { amount: number; count: number }>();
+	for (const r of receipts) {
+		const key = keyFn(r) ?? "未設定";
+		const cur = map.get(key) ?? { amount: 0, count: 0 };
+		cur.amount += r.amount ?? 0;
+		cur.count++;
+		map.set(key, cur);
+	}
+	return Array.from(map.entries())
+		.sort(([, a], [, b]) => b.amount - a.amount)
+		.map(([label, v]) => ({ label, ...v }));
+}
 
 function BarSection({
 	title,
 	rows,
 	maxAmount,
-}: { title: string; rows: SummaryRow[]; maxAmount: number }) {
+}: {
+	title: string;
+	rows: SummaryRow[];
+	maxAmount: number;
+}) {
 	return (
 		<Card>
 			<CardHeader>
@@ -80,23 +120,13 @@ export default function ReportsPage() {
 		);
 	}, []);
 
-	const projectMap = useMemo(() => {
-		const m = new Map<string, string>();
-		for (const p of projects) m.set(p.id, p.name);
-		return m;
-	}, [projects]);
-
-	const clientMap = useMemo(() => {
-		const m = new Map<string, string>();
-		for (const c of clients) m.set(c.id, c.name);
-		return m;
-	}, [clients]);
+	const projectMap = useMemo(() => createIdNameMap(projects), [projects]);
+	const clientMap = useMemo(() => createIdNameMap(clients), [clients]);
 
 	const years = useMemo(() => {
-		const set = new Set<string>();
-		for (const r of receipts) {
-			if (r.date) set.add(r.date.slice(0, 4));
-		}
+		const set = new Set(
+			receipts.filter((r) => r.date).map((r) => r.date!.slice(0, 4)),
+		);
 		return Array.from(set).sort().reverse();
 	}, [receipts]);
 
@@ -105,86 +135,54 @@ export default function ReportsPage() {
 		return receipts.filter((r) => r.date?.startsWith(filterYear));
 	}, [receipts, filterYear]);
 
-	const totalAmount = useMemo(() => {
-		let sum = 0;
-		for (const r of filtered) sum += r.amount ?? 0;
-		return sum;
-	}, [filtered]);
+	const totalAmount = useMemo(
+		() => filtered.reduce((sum, r) => sum + (r.amount ?? 0), 0),
+		[filtered],
+	);
 
-	const totalTax = useMemo(() => {
-		let sum = 0;
-		for (const r of filtered) sum += r.taxAmount ?? 0;
-		return sum;
-	}, [filtered]);
+	const totalTax = useMemo(
+		() => filtered.reduce((sum, r) => sum + (r.taxAmount ?? 0), 0),
+		[filtered],
+	);
 
 	const monthlyRows = useMemo(() => {
-		const map = new Map<string, { amount: number; count: number }>();
-		for (const r of filtered) {
-			if (!r.date) continue;
-			const ym = getYearMonth(r.date);
-			const cur = map.get(ym) ?? { amount: 0, count: 0 };
-			cur.amount += r.amount ?? 0;
-			cur.count++;
-			map.set(ym, cur);
-		}
-		return Array.from(map.entries())
-			.sort(([a], [b]) => a.localeCompare(b))
-			.map(([ym, v]) => ({ label: formatYearMonth(ym), ...v }));
+		const rows = aggregateByKey(filtered, (r) =>
+			r.date ? formatYearMonth(getYearMonth(r.date)) : null,
+		);
+		return rows.sort((a, b) => a.label.localeCompare(b.label));
 	}, [filtered]);
 
-	const projectRows = useMemo(() => {
-		const map = new Map<string, { amount: number; count: number }>();
-		for (const r of filtered) {
-			const key = r.projectId
-				? projectMap.get(r.projectId) ?? "不明"
-				: "未設定";
-			const cur = map.get(key) ?? { amount: 0, count: 0 };
-			cur.amount += r.amount ?? 0;
-			cur.count++;
-			map.set(key, cur);
-		}
-		return Array.from(map.entries())
-			.sort(([, a], [, b]) => b.amount - a.amount)
-			.map(([label, v]) => ({ label, ...v }));
-	}, [filtered, projectMap]);
+	const projectRows = useMemo(
+		() =>
+			aggregateByKey(filtered, (r) =>
+				r.projectId ? (projectMap.get(r.projectId) ?? "不明") : null,
+			),
+		[filtered, projectMap],
+	);
 
-	const clientRows = useMemo(() => {
-		const map = new Map<string, { amount: number; count: number }>();
-		for (const r of filtered) {
-			const key = r.clientId ? clientMap.get(r.clientId) ?? "不明" : "未設定";
-			const cur = map.get(key) ?? { amount: 0, count: 0 };
-			cur.amount += r.amount ?? 0;
-			cur.count++;
-			map.set(key, cur);
-		}
-		return Array.from(map.entries())
-			.sort(([, a], [, b]) => b.amount - a.amount)
-			.map(([label, v]) => ({ label, ...v }));
-	}, [filtered, clientMap]);
+	const clientRows = useMemo(
+		() =>
+			aggregateByKey(filtered, (r) =>
+				r.clientId ? (clientMap.get(r.clientId) ?? "不明") : null,
+			),
+		[filtered, clientMap],
+	);
 
-	const categoryRows = useMemo(() => {
-		const map = new Map<string, { amount: number; count: number }>();
-		for (const r of filtered) {
-			const key = r.accountCategory ?? "未設定";
-			const cur = map.get(key) ?? { amount: 0, count: 0 };
-			cur.amount += r.amount ?? 0;
-			cur.count++;
-			map.set(key, cur);
-		}
-		return Array.from(map.entries())
-			.sort(([, a], [, b]) => b.amount - a.amount)
-			.map(([label, v]) => ({ label, ...v }));
-	}, [filtered]);
+	const categoryRows = useMemo(
+		() => aggregateByKey(filtered, (r) => r.accountCategory ?? null),
+		[filtered],
+	);
 
-	const globalMax = useMemo(() => {
-		let max = 0;
-		for (const rows of [monthlyRows, projectRows, clientRows, categoryRows]) {
-			for (const r of rows) {
-				if (r.amount > max) max = r.amount;
-			}
-		}
-		return max;
-	}, [monthlyRows, projectRows, clientRows, categoryRows]);
+	const globalMax = useMemo(
+		() =>
+			Math.max(
+				0,
+				...[monthlyRows, projectRows, clientRows, categoryRows].flatMap(
+					(rows) => rows.map((r) => r.amount),
+				),
+			),
+		[monthlyRows, projectRows, clientRows, categoryRows],
+	);
 
 	return (
 		<div>
@@ -206,43 +204,20 @@ export default function ReportsPage() {
 
 			{/* サマリー */}
 			<div className="mt-4 grid grid-cols-3 gap-3">
-				<Card>
-					<CardContent className="pt-4 pb-3 text-center">
-						<p className="text-xs text-muted-foreground">件数</p>
-						<p className="text-xl font-bold">{filtered.length}件</p>
-					</CardContent>
-				</Card>
-				<Card>
-					<CardContent className="pt-4 pb-3 text-center">
-						<p className="text-xs text-muted-foreground">合計金額</p>
-						<p className="text-xl font-bold">{formatCurrency(totalAmount)}</p>
-					</CardContent>
-				</Card>
-				<Card>
-					<CardContent className="pt-4 pb-3 text-center">
-						<p className="text-xs text-muted-foreground">税額合計</p>
-						<p className="text-xl font-bold">{formatCurrency(totalTax)}</p>
-					</CardContent>
-				</Card>
+				<SummaryCard label="件数" value={`${filtered.length}件`} />
+				<SummaryCard label="合計金額" value={formatCurrency(totalAmount)} />
+				<SummaryCard label="税額合計" value={formatCurrency(totalTax)} />
 			</div>
 
 			{/* 各セクション */}
 			<div className="mt-6 space-y-6">
-				<BarSection
-					title="月別推移"
-					rows={monthlyRows}
-					maxAmount={globalMax}
-				/>
+				<BarSection title="月別推移" rows={monthlyRows} maxAmount={globalMax} />
 				<BarSection
 					title="プロジェクト別"
 					rows={projectRows}
 					maxAmount={globalMax}
 				/>
-				<BarSection
-					title="顧客別"
-					rows={clientRows}
-					maxAmount={globalMax}
-				/>
+				<BarSection title="顧客別" rows={clientRows} maxAmount={globalMax} />
 				<BarSection
 					title="勘定科目別"
 					rows={categoryRows}

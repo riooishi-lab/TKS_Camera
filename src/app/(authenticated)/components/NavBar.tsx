@@ -1,6 +1,16 @@
 "use client";
 
-import { BarChart3, Building2, FolderOpen, Menu, Receipt, Settings, Users } from "lucide-react";
+import {
+	BarChart3,
+	Building2,
+	FolderOpen,
+	LogOut,
+	Menu,
+	Receipt,
+	Settings,
+	Users,
+	UsersRound,
+} from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Button } from "@/components/ui/button";
@@ -12,19 +22,64 @@ import {
 	SheetTrigger,
 } from "@/components/ui/sheet";
 import { PAGE_PATH } from "@/constants/pagePath";
+import { useAuth } from "@/contexts/AuthContext";
 import { cn } from "@/lib/utils";
+import type { UserRole } from "@/libs/storage";
 
-const navItems = [
+type NavItem = {
+	href: string;
+	label: string;
+	icon: React.ComponentType<{ className?: string }>;
+	roles?: UserRole[];
+};
+
+const allNavItems: NavItem[] = [
 	{ href: PAGE_PATH.receipts, label: "レシート", icon: Receipt },
 	{ href: PAGE_PATH.reports, label: "レポート", icon: BarChart3 },
-	{ href: PAGE_PATH.projects, label: "プロジェクト", icon: FolderOpen },
-	{ href: PAGE_PATH.clients, label: "顧客企業", icon: Building2 },
-	{ href: PAGE_PATH.staff, label: "担当者", icon: Users },
-	{ href: PAGE_PATH.settings, label: "設定", icon: Settings },
+	{
+		href: PAGE_PATH.projects,
+		label: "プロジェクト",
+		icon: FolderOpen,
+		roles: ["admin", "editor"],
+	},
+	{
+		href: PAGE_PATH.clients,
+		label: "顧客企業",
+		icon: Building2,
+		roles: ["admin", "editor"],
+	},
+	{
+		href: PAGE_PATH.staff,
+		label: "担当者",
+		icon: Users,
+		roles: ["admin", "editor"],
+	},
+	{
+		href: PAGE_PATH.users,
+		label: "ユーザー管理",
+		icon: UsersRound,
+		roles: ["admin"],
+	},
+	{
+		href: PAGE_PATH.settings,
+		label: "設定",
+		icon: Settings,
+		roles: ["admin", "editor"],
+	},
 ];
 
 export function NavBar() {
 	const pathname = usePathname();
+	const { tksUser, logout } = useAuth();
+	const role = tksUser?.role ?? "viewer";
+
+	const navItems = allNavItems.filter(
+		(item) => !item.roles || item.roles.includes(role),
+	);
+
+	const handleLogout = async () => {
+		await logout();
+	};
 
 	return (
 		<header className="sticky top-0 z-50 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
@@ -58,6 +113,14 @@ export function NavBar() {
 									{item.label}
 								</Link>
 							))}
+							<button
+								type="button"
+								onClick={handleLogout}
+								className="mt-4 flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent"
+							>
+								<LogOut className="h-4 w-4" />
+								ログアウト
+							</button>
 						</nav>
 					</SheetContent>
 				</Sheet>
@@ -87,6 +150,17 @@ export function NavBar() {
 						</Link>
 					))}
 				</nav>
+
+				<div className="ml-auto hidden items-center gap-2 md:flex">
+					{tksUser && (
+						<span className="text-xs text-muted-foreground">
+							{tksUser.name ?? tksUser.email}
+						</span>
+					)}
+					<Button variant="ghost" size="icon" onClick={handleLogout}>
+						<LogOut className="h-4 w-4" />
+					</Button>
+				</div>
 			</div>
 		</header>
 	);

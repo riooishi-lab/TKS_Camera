@@ -29,7 +29,24 @@
 			"semicolons": "always"
 		}
 	},
+	"css": {
+		"parser": {
+			"cssModules": true
+		},
+		"linter": {
+			"enabled": false
+		},
+		"formatter": {
+			"enabled": false
+		}
+	},
 	"files": {
-		"includes": ["**", "!**/node_modules", "!**/.next", "!**/public"]
+		"includes": [
+			"**",
+			"!**/node_modules",
+			"!**/.next",
+			"!**/public",
+			"!**/*.css"
+		]
 	}
 }
