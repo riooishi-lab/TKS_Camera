@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/select";
 import { ACCOUNT_CATEGORIES } from "@/constants/accountCategories";
 import { PAGE_PATH } from "@/constants/pagePath";
+import { useAuth } from "@/contexts/AuthContext";
 import {
 	type Client,
 	fileToBase64,
@@ -35,11 +36,13 @@ function ReceiptFormFields({
 	projects,
 	clients,
 	staffList,
+	defaultPersonInCharge,
 }: {
 	extraction: ReceiptExtraction;
 	projects: Project[];
 	clients: Client[];
 	staffList: Staff[];
+	defaultPersonInCharge?: string;
 }) {
 	return (
 		<div className="space-y-4">
@@ -169,7 +172,7 @@ function ReceiptFormFields({
 				<NativeSelect
 					id="personInCharge"
 					name="personInCharge"
-					defaultValue=""
+					defaultValue={defaultPersonInCharge ?? ""}
 					placeholder="選択"
 					options={staffList.map((s) => ({
 						value: s.name,
@@ -201,6 +204,7 @@ function extractFormFields(fd: FormData) {
 }
 
 export function NewReceiptFlow() {
+	const { tksUser } = useAuth();
 	const [step, setStep] = useState<"capture" | "analyzing" | "form">("capture");
 	const [imageBase64, setImageBase64] = useState("");
 	const [extraction, setExtraction] = useState<ReceiptExtraction | null>(null);
@@ -323,6 +327,7 @@ export function NewReceiptFlow() {
 								projects={projects}
 								clients={clients}
 								staffList={staffList}
+								defaultPersonInCharge={tksUser?.name ?? undefined}
 							/>
 							<Button type="submit" className="w-full" disabled={isSaving}>
 								{isSaving ? "登録中..." : "レシートを登録"}
