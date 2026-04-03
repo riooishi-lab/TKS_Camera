@@ -115,13 +115,17 @@ export async function updateReceipt(
 	if (input.payee !== undefined) row.payee = input.payee;
 	if (input.amount !== undefined) row.amount = input.amount;
 	if (input.taxAmount !== undefined) row.tax_amount = input.taxAmount;
-	if (input.taxRateCategory !== undefined) row.tax_rate_category = input.taxRateCategory;
-	if (input.accountCategory !== undefined) row.account_category = input.accountCategory;
+	if (input.taxRateCategory !== undefined)
+		row.tax_rate_category = input.taxRateCategory;
+	if (input.accountCategory !== undefined)
+		row.account_category = input.accountCategory;
 	if (input.description !== undefined) row.description = input.description;
-	if (input.invoiceRegistrationNo !== undefined) row.invoice_registration_no = input.invoiceRegistrationNo;
+	if (input.invoiceRegistrationNo !== undefined)
+		row.invoice_registration_no = input.invoiceRegistrationNo;
 	if (input.projectId !== undefined) row.project_id = input.projectId;
 	if (input.clientId !== undefined) row.client_id = input.clientId;
-	if (input.personInCharge !== undefined) row.person_in_charge = input.personInCharge;
+	if (input.personInCharge !== undefined)
+		row.person_in_charge = input.personInCharge;
 	if (input.isAiVerified !== undefined) row.is_ai_verified = input.isAiVerified;
 
 	const { data } = await getSupabase()
@@ -134,7 +138,10 @@ export async function updateReceipt(
 }
 
 export async function deleteReceipt(id: string): Promise<boolean> {
-	const { error } = await getSupabase().from("tks_receipts").delete().eq("id", id);
+	const { error } = await getSupabase()
+		.from("tks_receipts")
+		.delete()
+		.eq("id", id);
 	return !error;
 }
 
@@ -205,7 +212,10 @@ export async function updateProject(
 }
 
 export async function deleteProject(id: string): Promise<boolean> {
-	const { error } = await getSupabase().from("tks_projects").delete().eq("id", id);
+	const { error } = await getSupabase()
+		.from("tks_projects")
+		.delete()
+		.eq("id", id);
 	return !error;
 }
 
@@ -254,7 +264,10 @@ export async function updateClient(
 }
 
 export async function deleteClient(id: string): Promise<boolean> {
-	const { error } = await getSupabase().from("tks_clients").delete().eq("id", id);
+	const { error } = await getSupabase()
+		.from("tks_clients")
+		.delete()
+		.eq("id", id);
 	return !error;
 }
 
@@ -325,9 +338,7 @@ export async function getUserByFirebaseUid(
 	return data ? mapUser(data) : null;
 }
 
-export async function getUserByEmail(
-	email: string,
-): Promise<TksUser | null> {
+export async function getUserByEmail(email: string): Promise<TksUser | null> {
 	const { data } = await getSupabase()
 		.from("tks_users")
 		.select("*")
@@ -404,10 +415,7 @@ export async function updateUser(
 }
 
 export async function deleteUser(id: string): Promise<boolean> {
-	const { error } = await getSupabase()
-		.from("tks_users")
-		.delete()
-		.eq("id", id);
+	const { error } = await getSupabase().from("tks_users").delete().eq("id", id);
 	return !error;
 }
 

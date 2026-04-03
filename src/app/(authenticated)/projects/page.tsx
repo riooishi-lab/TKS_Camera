@@ -1,10 +1,9 @@
 "use client";
 
 import { Pencil, Plus, Trash2 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { NativeSelect } from "@/components/ui/native-select";
 import {
 	Dialog,
 	DialogContent,
@@ -16,6 +15,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { NativeSelect } from "@/components/ui/native-select";
 import {
 	Select,
 	SelectContent,
@@ -33,10 +33,10 @@ import {
 } from "@/components/ui/table";
 import {
 	type Client,
-	type Project,
 	deleteProject,
 	getClients,
 	getProjects,
+	type Project,
 	saveProject,
 	updateProject,
 } from "@/libs/storage";
@@ -48,14 +48,14 @@ export default function ProjectsPage() {
 	const [createOpen, setCreateOpen] = useState(false);
 	const [editTarget, setEditTarget] = useState<Project | null>(null);
 
-	const reload = async () => {
+	const reload = useCallback(async () => {
 		setProjects(await getProjects());
 		setClients(await getClients());
-	};
+	}, []);
 
 	useEffect(() => {
 		reload();
-	}, []);
+	}, [reload]);
 
 	const clientName = (clientId: string | null | undefined) => {
 		if (!clientId) return "-";

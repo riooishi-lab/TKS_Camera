@@ -9,7 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { getFirebaseAuth } from "@/libs/firebase";
-import { type TksUser, getUserByInviteCode, updateUser } from "@/libs/storage";
+import { getUserByInviteCode, type TksUser, updateUser } from "@/libs/storage";
 
 function RegisterForm() {
 	const router = useRouter();

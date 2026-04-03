@@ -13,8 +13,7 @@ import { updateUser } from "@/libs/storage";
 
 export default function SetupPage() {
 	const router = useRouter();
-	const { firebaseUser, tksUser, loading, needsSetup, refreshUser } =
-		useAuth();
+	const { firebaseUser, tksUser, loading, needsSetup, refreshUser } = useAuth();
 	const [name, setName] = useState("");
 	const [newPassword, setNewPassword] = useState("");
 	const [error, setError] = useState("");

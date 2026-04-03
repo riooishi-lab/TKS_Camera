@@ -1,12 +1,14 @@
 "use client";
 
 import { Check, Copy, Plus, Trash2 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
 	Dialog,
 	DialogContent,
+	DialogDescription,
+	DialogFooter,
 	DialogHeader,
 	DialogTitle,
 	DialogTrigger,
@@ -23,11 +25,11 @@ import {
 } from "@/components/ui/table";
 import { useAuth } from "@/contexts/AuthContext";
 import {
-	type TksUser,
-	type UserRole,
 	createUser,
 	deleteUser,
 	getUsers,
+	type TksUser,
+	type UserRole,
 	updateUser,
 } from "@/libs/storage";
 
@@ -47,10 +49,10 @@ export default function UsersPage() {
 	const [inviteLink, setInviteLink] = useState("");
 	const [copied, setCopied] = useState(false);
 
-	const load = () => getUsers().then(setUsers);
+	const load = useCallback(() => getUsers().then(setUsers), []);
 	useEffect(() => {
 		load();
-	}, []);
+	}, [load]);
 
 	if (tksUser?.role !== "admin") {
 		return (
@@ -88,20 +90,31 @@ export default function UsersPage() {
 	};
 
 	const handleCopy = async () => {
-		await navigator.clipboard.writeText(inviteLink);
-		setCopied(true);
-		setTimeout(() => setCopied(false), 2000);
+		try {
+			await navigator.clipboard.writeText(inviteLink);
+			setCopied(true);
+			setTimeout(() => setCopied(false), 2000);
+		} catch {
+			setError("クリップボードへのコピーに失敗しました");
+		}
 	};
 
 	const handleRoleChange = async (id: string, newRole: UserRole) => {
-		await updateUser(id, { role: newRole });
-		load();
+		try {
+			await updateUser(id, { role: newRole });
+			load();
+		} catch {
+			setError("権限の変更に失敗しました");
+		}
 	};
 
-	const handleDelete = async (id: string, name: string | null) => {
-		if (!confirm(`${name ?? "このユーザー"}を削除しますか？`)) return;
-		await deleteUser(id);
-		load();
+	const handleDelete = async (id: string) => {
+		try {
+			await deleteUser(id);
+			load();
+		} catch {
+			setError("ユーザーの削除に失敗しました");
+		}
 	};
 
 	return (
@@ -118,9 +131,7 @@ export default function UsersPage() {
 						}
 					}}
 				>
-					<DialogTrigger
-						render={<Button />}
-					>
+					<DialogTrigger render={<Button />}>
 						<Plus className="mr-2 h-4 w-4" />
 						ユーザー招待
 					</DialogTrigger>
@@ -162,11 +173,7 @@ export default function UsersPage() {
 								<Label>招待リンク</Label>
 								<div className="flex items-center gap-2">
 									<Input value={inviteLink} readOnly className="text-xs" />
-									<Button
-										variant="outline"
-										size="icon"
-										onClick={handleCopy}
-									>
+									<Button variant="outline" size="icon" onClick={handleCopy}>
 										{copied ? (
 											<Check className="h-4 w-4" />
 										) : (
@@ -225,13 +232,30 @@ export default function UsersPage() {
 								</TableCell>
 								<TableCell>
 									{u.id !== tksUser.id && (
-										<Button
-											variant="ghost"
-											size="icon"
-											onClick={() => handleDelete(u.id, u.name)}
-										>
-											<Trash2 className="h-4 w-4" />
-										</Button>
+										<Dialog>
+											<DialogTrigger
+												render={<Button variant="ghost" size="icon" />}
+											>
+												<Trash2 className="h-4 w-4" />
+											</DialogTrigger>
+											<DialogContent>
+												<DialogHeader>
+													<DialogTitle>ユーザーを削除しますか？</DialogTitle>
+													<DialogDescription>
+														{u.name ?? u.email}
+														を削除します。この操作は取り消せません。
+													</DialogDescription>
+												</DialogHeader>
+												<DialogFooter>
+													<Button
+														variant="destructive"
+														onClick={() => handleDelete(u.id)}
+													>
+														削除する
+													</Button>
+												</DialogFooter>
+											</DialogContent>
+										</Dialog>
 									)}
 								</TableCell>
 							</TableRow>

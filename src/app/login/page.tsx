@@ -58,9 +58,7 @@ export default function LoginPage() {
 						<Receipt className="h-6 w-6 text-primary" />
 					</div>
 					<CardTitle>レシートスキャナー</CardTitle>
-					<p className="text-sm text-muted-foreground">
-						ログインしてください
-					</p>
+					<p className="text-sm text-muted-foreground">ログインしてください</p>
 				</CardHeader>
 				<CardContent>
 					<form onSubmit={handleSubmit} className="space-y-4">

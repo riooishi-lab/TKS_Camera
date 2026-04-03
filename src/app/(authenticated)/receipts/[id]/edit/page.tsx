@@ -18,17 +18,17 @@ import {
 } from "@/components/ui/select";
 import { ACCOUNT_CATEGORIES } from "@/constants/accountCategories";
 import { PAGE_PATH } from "@/constants/pagePath";
+import type { Receipt } from "@/libs/storage";
 import {
 	type Client,
-	type Project,
-	type Staff,
 	getClients,
 	getProjects,
 	getReceipt,
 	getStaff,
+	type Project,
+	type Staff,
 	updateReceipt,
 } from "@/libs/storage";
-import type { Receipt } from "@/libs/storage";
 
 export default function EditReceiptPage() {
 	const params = useParams<{ id: string }>();

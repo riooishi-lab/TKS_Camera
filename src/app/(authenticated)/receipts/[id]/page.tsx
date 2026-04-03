@@ -19,7 +19,12 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { PAGE_PATH } from "@/constants/pagePath";
 import { useAuth } from "@/contexts/AuthContext";
-import { type Receipt, deleteReceipt, getReceipt, updateReceipt } from "@/libs/storage";
+import {
+	deleteReceipt,
+	getReceipt,
+	type Receipt,
+	updateReceipt,
+} from "@/libs/storage";
 import { formatCurrency } from "@/utils/formatCurrency";
 import { formatDate } from "@/utils/formatDate";
 
@@ -158,9 +163,7 @@ export default function ReceiptDetailPage() {
 						<DetailRow
 							label="金額（税込）"
 							value={
-								receipt.amount != null
-									? formatCurrency(receipt.amount)
-									: null
+								receipt.amount != null ? formatCurrency(receipt.amount) : null
 							}
 						/>
 						<DetailRow
@@ -181,10 +184,7 @@ export default function ReceiptDetailPage() {
 						/>
 						<Separator />
 						<DetailRow label="担当者" value={receipt.personInCharge} />
-						<DetailRow
-							label="登録日"
-							value={formatDate(receipt.createdAt)}
-						/>
+						<DetailRow label="登録日" value={formatDate(receipt.createdAt)} />
 					</CardContent>
 				</Card>
 			</div>

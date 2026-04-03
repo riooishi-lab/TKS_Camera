@@ -1,7 +1,7 @@
 "use client";
 
 import { Pencil, Plus, Trash2 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
 	Dialog,
@@ -23,9 +23,9 @@ import {
 	TableRow,
 } from "@/components/ui/table";
 import {
-	type Staff,
 	deleteStaff,
 	getStaff,
+	type Staff,
 	saveStaff,
 	updateStaff,
 } from "@/libs/storage";
@@ -36,11 +36,11 @@ export default function StaffPage() {
 	const [createOpen, setCreateOpen] = useState(false);
 	const [editTarget, setEditTarget] = useState<Staff | null>(null);
 
-	const reload = async () => setStaffList(await getStaff());
+	const reload = useCallback(async () => setStaffList(await getStaff()), []);
 
 	useEffect(() => {
 		reload();
-	}, []);
+	}, [reload]);
 
 	const handleCreate = async (e: React.FormEvent<HTMLFormElement>) => {
 		e.preventDefault();

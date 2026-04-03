@@ -2,13 +2,13 @@ import { type FirebaseApp, getApps, initializeApp } from "firebase/app";
 import { type Auth, getAuth } from "firebase/auth";
 
 const firebaseConfig = {
-	apiKey: "AIzaSyB-GpVS9-DSvvnb-2ibi0jLm4QUqMpktcA",
-	authDomain: "creative-team-lab.firebaseapp.com",
-	projectId: "creative-team-lab",
-	storageBucket: "creative-team-lab.firebasestorage.app",
-	messagingSenderId: "630104439320",
-	appId: "1:630104439320:web:58b4702b7dfe1035bea16d",
-	measurementId: "G-7GR9XXNM7Y",
+	apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
+	authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
+	projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
+	storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
+	messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
+	appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
+	measurementId: process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID,
 };
 
 let _app: FirebaseApp | undefined;

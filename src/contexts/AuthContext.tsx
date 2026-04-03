@@ -1,13 +1,23 @@
 "use client";
 
 import type { User as FirebaseUser } from "firebase/auth";
-import { onAuthStateChanged, signInWithEmailAndPassword, signOut } from "firebase/auth";
-import { createContext, useContext, useEffect, useState } from "react";
+import {
+	onAuthStateChanged,
+	signInWithEmailAndPassword,
+	signOut,
+} from "firebase/auth";
+import {
+	createContext,
+	useCallback,
+	useContext,
+	useEffect,
+	useState,
+} from "react";
 import { getFirebaseAuth } from "@/libs/firebase";
 import {
-	type TksUser,
 	getUserByEmail,
 	getUserByFirebaseUid,
+	type TksUser,
 	updateUser,
 } from "@/libs/storage";
 
@@ -29,7 +39,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 	const [loading, setLoading] = useState(true);
 	const [needsSetup, setNeedsSetup] = useState(false);
 
-	const resolveTksUser = async (fbUser: FirebaseUser) => {
+	const resolveTksUser = useCallback(async (fbUser: FirebaseUser) => {
 		// Try by firebase_uid first
 		let user = await getUserByFirebaseUid(fbUser.uid);
 
@@ -52,7 +62,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 			setTksUser(null);
 			setNeedsSetup(false);
 		}
-	};
+	}, []);
 
 	useEffect(() => {
 		const auth = getFirebaseAuth();
@@ -67,7 +77,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 			setLoading(false);
 		});
 		return unsubscribe;
-	}, []);
+	}, [resolveTksUser]);
 
 	const login = async (email: string, password: string) => {
 		const auth = getFirebaseAuth();
@@ -81,11 +91,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 		setNeedsSetup(false);
 	};
 
-	const refreshUser = async () => {
+	const refreshUser = useCallback(async () => {
 		if (firebaseUser) {
 			await resolveTksUser(firebaseUser);
 		}
-	};
+	}, [firebaseUser, resolveTksUser]);
 
 	return (
 		<AuthContext.Provider

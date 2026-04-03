@@ -60,7 +60,12 @@ const allNavItems: NavItem[] = [
 		icon: UsersRound,
 		roles: ["admin"],
 	},
-	{ href: PAGE_PATH.settings, label: "設定", icon: Settings, roles: ["admin", "editor"] },
+	{
+		href: PAGE_PATH.settings,
+		label: "設定",
+		icon: Settings,
+		roles: ["admin", "editor"],
+	},
 ];
 
 export function NavBar() {
