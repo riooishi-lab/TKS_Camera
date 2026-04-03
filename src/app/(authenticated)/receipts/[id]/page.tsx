@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, Pencil, Trash2 } from "lucide-react";
+import { ArrowLeft, CheckCircle, Pencil, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -18,14 +18,18 @@ import {
 } from "@/components/ui/dialog";
 import { Separator } from "@/components/ui/separator";
 import { PAGE_PATH } from "@/constants/pagePath";
-import { type Receipt, deleteReceipt, getReceipt } from "@/libs/storage";
+import { useAuth } from "@/contexts/AuthContext";
+import { type Receipt, deleteReceipt, getReceipt, updateReceipt } from "@/libs/storage";
 import { formatCurrency } from "@/utils/formatCurrency";
 import { formatDate } from "@/utils/formatDate";
 
 export default function ReceiptDetailPage() {
 	const params = useParams<{ id: string }>();
 	const router = useRouter();
+	const { tksUser } = useAuth();
 	const [receipt, setReceipt] = useState<Receipt | null>(null);
+	const isAdmin = tksUser?.role === "admin";
+	const canEdit = tksUser?.role === "admin" || tksUser?.role === "editor";
 
 	useEffect(() => {
 		getReceipt(params.id).then((r) => {
@@ -72,32 +76,50 @@ export default function ReceiptDetailPage() {
 					)}
 				</div>
 				<div className="flex gap-2">
-					<Button
-						render={<Link href={PAGE_PATH.receiptEdit(receipt.id)} />}
-						variant="outline"
-					>
-						<Pencil className="mr-2 h-4 w-4" />
-						編集
-					</Button>
-					<Dialog>
-						<DialogTrigger render={<Button variant="outline" />}>
-							<Trash2 className="mr-2 h-4 w-4" />
-							削除
-						</DialogTrigger>
-						<DialogContent>
-							<DialogHeader>
-								<DialogTitle>レシートを削除しますか？</DialogTitle>
-								<DialogDescription>
-									この操作は取り消せません。
-								</DialogDescription>
-							</DialogHeader>
-							<DialogFooter>
-								<Button variant="destructive" onClick={handleDelete}>
-									削除する
-								</Button>
-							</DialogFooter>
-						</DialogContent>
-					</Dialog>
+					{isAdmin && !receipt.isAiVerified && (
+						<Button
+							variant="outline"
+							onClick={async () => {
+								const updated = await updateReceipt(receipt.id, {
+									isAiVerified: true,
+								});
+								if (updated) setReceipt(updated);
+							}}
+						>
+							<CheckCircle className="mr-2 h-4 w-4" />
+							確認済みにする
+						</Button>
+					)}
+					{canEdit && (
+						<Button
+							render={<Link href={PAGE_PATH.receiptEdit(receipt.id)} />}
+							variant="outline"
+						>
+							<Pencil className="mr-2 h-4 w-4" />
+							編集
+						</Button>
+					)}
+					{isAdmin && (
+						<Dialog>
+							<DialogTrigger render={<Button variant="outline" />}>
+								<Trash2 className="mr-2 h-4 w-4" />
+								削除
+							</DialogTrigger>
+							<DialogContent>
+								<DialogHeader>
+									<DialogTitle>レシートを削除しますか？</DialogTitle>
+									<DialogDescription>
+										この操作は取り消せません。
+									</DialogDescription>
+								</DialogHeader>
+								<DialogFooter>
+									<Button variant="destructive" onClick={handleDelete}>
+										削除する
+									</Button>
+								</DialogFooter>
+							</DialogContent>
+						</Dialog>
+					)}
 				</div>
 			</div>
 

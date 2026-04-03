@@ -22,6 +22,7 @@ import {
 	getProjects,
 	getReceipts,
 } from "@/libs/storage";
+import { useAuth } from "@/contexts/AuthContext";
 import { formatCurrency } from "@/utils/formatCurrency";
 import { formatDate } from "@/utils/formatDate";
 
@@ -35,6 +36,8 @@ function formatYearMonth(ym: string): string {
 }
 
 export default function ReceiptsPage() {
+	const { tksUser } = useAuth();
+	const canCreate = tksUser?.role === "admin" || tksUser?.role === "editor";
 	const [receipts, setReceipts] = useState<Receipt[]>([]);
 	const [projects, setProjects] = useState<Project[]>([]);
 	const [clients, setClients] = useState<Client[]>([]);
@@ -95,10 +98,12 @@ export default function ReceiptsPage() {
 		<div>
 			<div className="flex items-center justify-between">
 				<h1 className="text-2xl font-bold">レシート一覧</h1>
-				<Button render={<Link href={PAGE_PATH.receiptNew} />}>
-					<Plus className="mr-2 h-4 w-4" />
-					レシート登録
-				</Button>
+				{canCreate && (
+					<Button render={<Link href={PAGE_PATH.receiptNew} />}>
+						<Plus className="mr-2 h-4 w-4" />
+						レシート登録
+					</Button>
+				)}
 			</div>
 
 			{/* フィルター */}
