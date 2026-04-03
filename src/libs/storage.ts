@@ -299,10 +299,32 @@ function mapStaff(s: Record<string, unknown>): Staff {
 
 // ===== Image =====
 
+const MAX_WIDTH = 1200;
+const JPEG_QUALITY = 0.7;
+
 export function fileToBase64(file: File): Promise<string> {
 	return new Promise((resolve, reject) => {
+		const img = new Image();
+		img.onload = () => {
+			const scale = img.width > MAX_WIDTH ? MAX_WIDTH / img.width : 1;
+			const w = Math.round(img.width * scale);
+			const h = Math.round(img.height * scale);
+			const canvas = document.createElement("canvas");
+			canvas.width = w;
+			canvas.height = h;
+			const ctx = canvas.getContext("2d");
+			if (!ctx) {
+				reject(new Error("Canvas not supported"));
+				return;
+			}
+			ctx.drawImage(img, 0, 0, w, h);
+			resolve(canvas.toDataURL("image/jpeg", JPEG_QUALITY));
+		};
+		img.onerror = reject;
 		const reader = new FileReader();
-		reader.onload = () => resolve(reader.result as string);
+		reader.onload = () => {
+			img.src = reader.result as string;
+		};
 		reader.onerror = reject;
 		reader.readAsDataURL(file);
 	});
