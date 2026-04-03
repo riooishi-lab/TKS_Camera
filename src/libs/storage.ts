@@ -1,4 +1,4 @@
-import { supabase } from "./supabase";
+import { getSupabase } from "./supabase";
 
 // ===== Types =====
 
@@ -47,7 +47,7 @@ export type Receipt = {
 // ===== Receipts =====
 
 export async function getReceipts(): Promise<Receipt[]> {
-	const { data } = await supabase
+	const { data } = await getSupabase()
 		.from("tks_receipts")
 		.select("*")
 		.order("created_at", { ascending: false });
@@ -55,7 +55,7 @@ export async function getReceipts(): Promise<Receipt[]> {
 }
 
 export async function getReceipt(id: string): Promise<Receipt | null> {
-	const { data } = await supabase
+	const { data } = await getSupabase()
 		.from("tks_receipts")
 		.select("*")
 		.eq("id", id)
@@ -66,7 +66,7 @@ export async function getReceipt(id: string): Promise<Receipt | null> {
 export async function saveReceipt(
 	input: Omit<Receipt, "id" | "createdAt" | "updatedAt">,
 ): Promise<Receipt> {
-	const { data, error } = await supabase
+	const { data, error } = await getSupabase()
 		.from("tks_receipts")
 		.insert({
 			date: input.date,
@@ -109,7 +109,7 @@ export async function updateReceipt(
 	if (input.personInCharge !== undefined) row.person_in_charge = input.personInCharge;
 	if (input.isAiVerified !== undefined) row.is_ai_verified = input.isAiVerified;
 
-	const { data } = await supabase
+	const { data } = await getSupabase()
 		.from("tks_receipts")
 		.update(row)
 		.eq("id", id)
@@ -119,7 +119,7 @@ export async function updateReceipt(
 }
 
 export async function deleteReceipt(id: string): Promise<boolean> {
-	const { error } = await supabase.from("tks_receipts").delete().eq("id", id);
+	const { error } = await getSupabase().from("tks_receipts").delete().eq("id", id);
 	return !error;
 }
 
@@ -149,7 +149,7 @@ function mapReceipt(r: Record<string, unknown>): Receipt {
 // ===== Projects =====
 
 export async function getProjects(): Promise<Project[]> {
-	const { data } = await supabase
+	const { data } = await getSupabase()
 		.from("tks_projects")
 		.select("*")
 		.order("created_at", { ascending: false });
@@ -161,7 +161,7 @@ export async function saveProject(
 	description: string | null,
 	clientId: string | null = null,
 ): Promise<Project> {
-	const { data, error } = await supabase
+	const { data, error } = await getSupabase()
 		.from("tks_projects")
 		.insert({ name, description, client_id: clientId })
 		.select()
@@ -180,7 +180,7 @@ export async function updateProject(
 	if (input.clientId !== undefined) row.client_id = input.clientId;
 	if (input.isActive !== undefined) row.is_active = input.isActive;
 
-	const { data } = await supabase
+	const { data } = await getSupabase()
 		.from("tks_projects")
 		.update(row)
 		.eq("id", id)
@@ -190,7 +190,7 @@ export async function updateProject(
 }
 
 export async function deleteProject(id: string): Promise<boolean> {
-	const { error } = await supabase.from("tks_projects").delete().eq("id", id);
+	const { error } = await getSupabase().from("tks_projects").delete().eq("id", id);
 	return !error;
 }
 
@@ -208,7 +208,7 @@ function mapProject(p: Record<string, unknown>): Project {
 // ===== Clients =====
 
 export async function getClients(): Promise<Client[]> {
-	const { data } = await supabase
+	const { data } = await getSupabase()
 		.from("tks_clients")
 		.select("*")
 		.order("created_at", { ascending: false });
@@ -216,7 +216,7 @@ export async function getClients(): Promise<Client[]> {
 }
 
 export async function saveClient(name: string): Promise<Client> {
-	const { data, error } = await supabase
+	const { data, error } = await getSupabase()
 		.from("tks_clients")
 		.insert({ name })
 		.select()
@@ -229,7 +229,7 @@ export async function updateClient(
 	id: string,
 	input: Partial<Omit<Client, "id" | "createdAt">>,
 ): Promise<Client | null> {
-	const { data } = await supabase
+	const { data } = await getSupabase()
 		.from("tks_clients")
 		.update(input)
 		.eq("id", id)
@@ -239,7 +239,7 @@ export async function updateClient(
 }
 
 export async function deleteClient(id: string): Promise<boolean> {
-	const { error } = await supabase.from("tks_clients").delete().eq("id", id);
+	const { error } = await getSupabase().from("tks_clients").delete().eq("id", id);
 	return !error;
 }
 
@@ -254,7 +254,7 @@ function mapClient(c: Record<string, unknown>): Client {
 // ===== Staff =====
 
 export async function getStaff(): Promise<Staff[]> {
-	const { data } = await supabase
+	const { data } = await getSupabase()
 		.from("tks_staff")
 		.select("*")
 		.order("created_at", { ascending: false });
@@ -262,7 +262,7 @@ export async function getStaff(): Promise<Staff[]> {
 }
 
 export async function saveStaff(name: string): Promise<Staff> {
-	const { data, error } = await supabase
+	const { data, error } = await getSupabase()
 		.from("tks_staff")
 		.insert({ name })
 		.select()
@@ -275,7 +275,7 @@ export async function updateStaff(
 	id: string,
 	input: Partial<Omit<Staff, "id" | "createdAt">>,
 ): Promise<Staff | null> {
-	const { data } = await supabase
+	const { data } = await getSupabase()
 		.from("tks_staff")
 		.update(input)
 		.eq("id", id)
@@ -285,7 +285,7 @@ export async function updateStaff(
 }
 
 export async function deleteStaff(id: string): Promise<boolean> {
-	const { error } = await supabase.from("tks_staff").delete().eq("id", id);
+	const { error } = await getSupabase().from("tks_staff").delete().eq("id", id);
 	return !error;
 }
 
