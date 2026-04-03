@@ -121,9 +121,10 @@ export function NewReceiptFlow() {
 			});
 
 			window.location.href = PAGE_PATH.receipts;
-		} catch {
+		} catch (err) {
 			setIsSaving(false);
-			setError("保存に失敗しました");
+			const msg = err instanceof Error ? err.message : String(err);
+			setError(`保存に失敗しました: ${msg}`);
 		}
 	};
 
