@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
 	Sheet,
@@ -77,14 +78,17 @@ export function NavBar() {
 		(item) => !item.roles || item.roles.includes(role),
 	);
 
+	const [sheetOpen, setSheetOpen] = useState(false);
+
 	const handleLogout = async () => {
+		setSheetOpen(false);
 		await logout();
 	};
 
 	return (
 		<header className="sticky top-0 z-50 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
 			<div className="container mx-auto flex h-14 items-center px-4">
-				<Sheet>
+				<Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
 					<SheetTrigger
 						render={
 							<Button variant="ghost" size="icon" className="md:hidden" />
@@ -102,6 +106,7 @@ export function NavBar() {
 								<Link
 									key={item.href}
 									href={item.href}
+									onClick={() => setSheetOpen(false)}
 									className={cn(
 										"flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors hover:bg-accent",
 										pathname.startsWith(item.href)
