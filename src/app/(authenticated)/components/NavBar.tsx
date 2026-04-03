@@ -1,6 +1,6 @@
 "use client";
 
-import { Building2, FolderOpen, Menu, Receipt, Settings, Users } from "lucide-react";
+import { BarChart3, Building2, FolderOpen, Menu, Receipt, Settings, Users } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Button } from "@/components/ui/button";
@@ -16,6 +16,7 @@ import { cn } from "@/lib/utils";
 
 const navItems = [
 	{ href: PAGE_PATH.receipts, label: "レシート", icon: Receipt },
+	{ href: PAGE_PATH.reports, label: "レポート", icon: BarChart3 },
 	{ href: PAGE_PATH.projects, label: "プロジェクト", icon: FolderOpen },
 	{ href: PAGE_PATH.clients, label: "顧客企業", icon: Building2 },
 	{ href: PAGE_PATH.staff, label: "担当者", icon: Users },
