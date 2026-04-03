@@ -62,19 +62,21 @@ export type Receipt = {
 // ===== Receipts =====
 
 export async function getReceipts(): Promise<Receipt[]> {
-	const { data } = await getSupabase()
+	const { data, error } = await getSupabase()
 		.from("tks_receipts")
 		.select("*")
 		.order("created_at", { ascending: false });
+	if (error) console.error("getReceipts:", error.message);
 	return (data ?? []).map(mapReceipt);
 }
 
 export async function getReceipt(id: string): Promise<Receipt | null> {
-	const { data } = await getSupabase()
+	const { data, error } = await getSupabase()
 		.from("tks_receipts")
 		.select("*")
 		.eq("id", id)
 		.single();
+	if (error) console.error("getReceipt:", error.message);
 	return data ? mapReceipt(data) : null;
 }
 
@@ -171,10 +173,11 @@ function mapReceipt(r: Record<string, unknown>): Receipt {
 // ===== Projects =====
 
 export async function getProjects(): Promise<Project[]> {
-	const { data } = await getSupabase()
+	const { data, error } = await getSupabase()
 		.from("tks_projects")
 		.select("*")
 		.order("created_at", { ascending: false });
+	if (error) console.error("getProjects:", error.message);
 	return (data ?? []).map(mapProject);
 }
 
@@ -233,10 +236,11 @@ function mapProject(p: Record<string, unknown>): Project {
 // ===== Clients =====
 
 export async function getClients(): Promise<Client[]> {
-	const { data } = await getSupabase()
+	const { data, error } = await getSupabase()
 		.from("tks_clients")
 		.select("*")
 		.order("created_at", { ascending: false });
+	if (error) console.error("getClients:", error.message);
 	return (data ?? []).map(mapClient);
 }
 
@@ -282,10 +286,11 @@ function mapClient(c: Record<string, unknown>): Client {
 // ===== Staff =====
 
 export async function getStaff(): Promise<Staff[]> {
-	const { data } = await getSupabase()
+	const { data, error } = await getSupabase()
 		.from("tks_staff")
 		.select("*")
 		.order("created_at", { ascending: false });
+	if (error) console.error("getStaff:", error.message);
 	return (data ?? []).map(mapStaff);
 }
 
@@ -330,40 +335,36 @@ function mapStaff(s: Record<string, unknown>): Staff {
 export async function getUserByFirebaseUid(
 	uid: string,
 ): Promise<TksUser | null> {
-	const { data } = await getSupabase()
+	const { data, error } = await getSupabase()
 		.from("tks_users")
 		.select("*")
 		.eq("firebase_uid", uid)
 		.single();
-	return data ? mapUser(data) : null;
-}
-
-export async function getUserByEmail(email: string): Promise<TksUser | null> {
-	const { data } = await getSupabase()
-		.from("tks_users")
-		.select("*")
-		.eq("email", email)
-		.single();
+	if (error && error.code !== "PGRST116")
+		console.error("getUserByFirebaseUid:", error.message);
 	return data ? mapUser(data) : null;
 }
 
 export async function getUserByInviteCode(
 	code: string,
 ): Promise<TksUser | null> {
-	const { data } = await getSupabase()
+	const { data, error } = await getSupabase()
 		.from("tks_users")
 		.select("*")
 		.eq("invite_code", code)
 		.eq("status", "pending")
 		.single();
+	if (error && error.code !== "PGRST116")
+		console.error("getUserByInviteCode:", error.message);
 	return data ? mapUser(data) : null;
 }
 
 export async function getUsers(): Promise<TksUser[]> {
-	const { data } = await getSupabase()
+	const { data, error } = await getSupabase()
 		.from("tks_users")
 		.select("*")
 		.order("created_at", { ascending: false });
+	if (error) console.error("getUsers:", error.message);
 	return (data ?? []).map(mapUser);
 }
 

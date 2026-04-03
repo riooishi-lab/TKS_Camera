@@ -14,12 +14,7 @@ import {
 	useState,
 } from "react";
 import { getFirebaseAuth } from "@/libs/firebase";
-import {
-	getUserByEmail,
-	getUserByFirebaseUid,
-	type TksUser,
-	updateUser,
-} from "@/libs/storage";
+import { getUserByFirebaseUid, type TksUser } from "@/libs/storage";
 
 type AuthContextValue = {
 	firebaseUser: FirebaseUser | null;
@@ -40,25 +35,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 	const [needsSetup, setNeedsSetup] = useState(false);
 
 	const resolveTksUser = useCallback(async (fbUser: FirebaseUser) => {
-		// Try by firebase_uid first
-		let user = await getUserByFirebaseUid(fbUser.uid);
-
-		if (!user) {
-			// First login — match by email and link firebase_uid
-			user = await getUserByEmail(fbUser.email ?? "");
-			if (user) {
-				user = await updateUser(user.id, {
-					firebaseUid: fbUser.uid,
-					status: "active",
-				});
-			}
-		}
+		const user = await getUserByFirebaseUid(fbUser.uid);
 
 		if (user) {
 			setTksUser(user);
 			setNeedsSetup(!user.name);
 		} else {
-			// Firebase user exists but no tks_users record — shouldn't happen normally
 			setTksUser(null);
 			setNeedsSetup(false);
 		}
