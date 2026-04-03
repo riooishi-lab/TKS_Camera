@@ -167,6 +167,180 @@ function FilterSelect({
 	);
 }
 
+function ColumnSettings({
+	visibleCols,
+	onToggle,
+}: {
+	visibleCols: Set<ColumnKey>;
+	onToggle: (key: ColumnKey) => void;
+}) {
+	return (
+		<div className="mt-3 flex flex-wrap gap-2 rounded-lg border bg-muted/30 p-3">
+			<span className="mr-1 text-xs font-medium text-muted-foreground">
+				表示項目:
+			</span>
+			{ALL_COLUMNS.map((col) => (
+				<button
+					key={col.key}
+					type="button"
+					disabled={col.alwaysVisible}
+					onClick={() => onToggle(col.key)}
+					className={`rounded-full border px-2.5 py-0.5 text-xs transition-colors ${
+						col.alwaysVisible || visibleCols.has(col.key)
+							? "border-primary bg-primary/10 text-primary"
+							: "border-border text-muted-foreground hover:border-primary/50"
+					} ${col.alwaysVisible ? "opacity-60 cursor-default" : "cursor-pointer"}`}
+				>
+					{col.label}
+				</button>
+			))}
+		</div>
+	);
+}
+
+function FilterBar({
+	filterMonth,
+	setFilterMonth,
+	filterClient,
+	setFilterClient,
+	filterProject,
+	setFilterProject,
+	months,
+	clients,
+	projects,
+}: {
+	filterMonth: string;
+	setFilterMonth: (v: string) => void;
+	filterClient: string;
+	setFilterClient: (v: string) => void;
+	filterProject: string;
+	setFilterProject: (v: string) => void;
+	months: string[];
+	clients: Client[];
+	projects: Project[];
+}) {
+	const hasFilter = filterMonth || filterClient || filterProject;
+	return (
+		<div className="mt-4 flex flex-wrap items-center gap-2">
+			<FilterSelect
+				value={filterMonth}
+				onChange={setFilterMonth}
+				placeholder="全期間"
+				options={months.map((ym) => ({
+					value: ym,
+					label: formatYearMonth(ym),
+				}))}
+			/>
+			<FilterSelect
+				value={filterClient}
+				onChange={setFilterClient}
+				placeholder="全顧客"
+				options={clients.map((c) => ({ value: c.id, label: c.name }))}
+			/>
+			<FilterSelect
+				value={filterProject}
+				onChange={setFilterProject}
+				placeholder="全PJ"
+				options={projects.map((p) => ({ value: p.id, label: p.name }))}
+			/>
+			{hasFilter && (
+				<button
+					type="button"
+					onClick={() => {
+						setFilterMonth("");
+						setFilterProject("");
+						setFilterClient("");
+					}}
+					className="text-xs text-muted-foreground hover:text-foreground"
+				>
+					クリア
+				</button>
+			)}
+		</div>
+	);
+}
+
+function ReceiptTable({
+	receipts,
+	columns,
+	projectMap,
+	clientMap,
+}: {
+	receipts: Receipt[];
+	columns: ColumnDef[];
+	projectMap: Map<string, string>;
+	clientMap: Map<string, string>;
+}) {
+	return (
+		<div className="mt-4 overflow-x-auto rounded-md border">
+			<Table>
+				<TableHeader>
+					<TableRow>
+						{columns.map((col) => (
+							<TableHead
+								key={col.key}
+								className={`${col.align === "right" ? "text-right" : ""} ${
+									!col.alwaysVisible ? "hidden sm:table-cell" : ""
+								}`}
+							>
+								{col.label}
+							</TableHead>
+						))}
+					</TableRow>
+				</TableHeader>
+				<TableBody>
+					{receipts.map((receipt) => (
+						<TableRow key={receipt.id}>
+							{columns.map((col) => (
+								<TableCell
+									key={col.key}
+									className={`${col.align === "right" ? "text-right" : ""} ${
+										!col.alwaysVisible ? "hidden sm:table-cell" : ""
+									}`}
+								>
+									<CellValue
+										col={col.key}
+										receipt={receipt}
+										projectMap={projectMap}
+										clientMap={clientMap}
+									/>
+								</TableCell>
+							))}
+						</TableRow>
+					))}
+				</TableBody>
+			</Table>
+		</div>
+	);
+}
+
+function SummaryBar({
+	count,
+	total,
+	taxTotal,
+}: {
+	count: number;
+	total: number;
+	taxTotal: number;
+}) {
+	return (
+		<div className="mt-3 flex flex-wrap items-center gap-4 rounded-lg border bg-muted/50 px-4 py-2.5 text-sm">
+			<span>
+				<span className="text-muted-foreground">件数:</span>{" "}
+				<span className="font-semibold">{count}件</span>
+			</span>
+			<span>
+				<span className="text-muted-foreground">合計:</span>{" "}
+				<span className="font-semibold">{formatCurrency(total)}</span>
+			</span>
+			<span>
+				<span className="text-muted-foreground">税額:</span>{" "}
+				<span className="font-semibold">{formatCurrency(taxTotal)}</span>
+			</span>
+		</div>
+	);
+}
+
 function getYearMonth(date: string): string {
 	return date.slice(0, 7);
 }
@@ -202,11 +376,7 @@ export default function ReceiptsPage() {
 	const toggleColumn = (key: ColumnKey) => {
 		setVisibleCols((prev) => {
 			const next = new Set(prev);
-			if (next.has(key)) {
-				next.delete(key);
-			} else {
-				next.add(key);
-			}
+			next.has(key) ? next.delete(key) : next.add(key);
 			localStorage.setItem(STORAGE_KEY, JSON.stringify([...next]));
 			return next;
 		});
@@ -253,7 +423,7 @@ export default function ReceiptsPage() {
 		[filtered],
 	);
 
-	const hasFilter = filterMonth || filterProject || filterClient;
+	const hasFilter = Boolean(filterMonth || filterProject || filterClient);
 
 	return (
 		<div>
@@ -277,126 +447,35 @@ export default function ReceiptsPage() {
 				</div>
 			</div>
 
-			{/* カラム設定 */}
 			{showColSettings && (
-				<div className="mt-3 flex flex-wrap gap-2 rounded-lg border bg-muted/30 p-3">
-					<span className="mr-1 text-xs font-medium text-muted-foreground">
-						表示項目:
-					</span>
-					{ALL_COLUMNS.map((col) => (
-						<button
-							key={col.key}
-							type="button"
-							disabled={col.alwaysVisible}
-							onClick={() => toggleColumn(col.key)}
-							className={`rounded-full border px-2.5 py-0.5 text-xs transition-colors ${
-								col.alwaysVisible || visibleCols.has(col.key)
-									? "border-primary bg-primary/10 text-primary"
-									: "border-border text-muted-foreground hover:border-primary/50"
-							} ${col.alwaysVisible ? "opacity-60 cursor-default" : "cursor-pointer"}`}
-						>
-							{col.label}
-						</button>
-					))}
-				</div>
+				<ColumnSettings visibleCols={visibleCols} onToggle={toggleColumn} />
 			)}
 
-			{/* フィルター */}
-			<div className="mt-4 flex flex-wrap items-center gap-2">
-				<FilterSelect
-					value={filterMonth}
-					onChange={setFilterMonth}
-					placeholder="全期間"
-					options={months.map((ym) => ({
-						value: ym,
-						label: formatYearMonth(ym),
-					}))}
-				/>
-				<FilterSelect
-					value={filterClient}
-					onChange={setFilterClient}
-					placeholder="全顧客"
-					options={clients.map((c) => ({ value: c.id, label: c.name }))}
-				/>
-				<FilterSelect
-					value={filterProject}
-					onChange={setFilterProject}
-					placeholder="全PJ"
-					options={projects.map((p) => ({ value: p.id, label: p.name }))}
-				/>
-				{hasFilter && (
-					<button
-						type="button"
-						onClick={() => {
-							setFilterMonth("");
-							setFilterProject("");
-							setFilterClient("");
-						}}
-						className="text-xs text-muted-foreground hover:text-foreground"
-					>
-						クリア
-					</button>
-				)}
-			</div>
+			<FilterBar
+				filterMonth={filterMonth}
+				setFilterMonth={setFilterMonth}
+				filterClient={filterClient}
+				setFilterClient={setFilterClient}
+				filterProject={filterProject}
+				setFilterProject={setFilterProject}
+				months={months}
+				clients={clients}
+				projects={projects}
+			/>
 
-			{/* 集計バー */}
-			<div className="mt-3 flex flex-wrap items-center gap-4 rounded-lg border bg-muted/50 px-4 py-2.5 text-sm">
-				<span>
-					<span className="text-muted-foreground">件数:</span>{" "}
-					<span className="font-semibold">{summary.count}件</span>
-				</span>
-				<span>
-					<span className="text-muted-foreground">合計:</span>{" "}
-					<span className="font-semibold">{formatCurrency(summary.total)}</span>
-				</span>
-				<span>
-					<span className="text-muted-foreground">税額:</span>{" "}
-					<span className="font-semibold">
-						{formatCurrency(summary.taxTotal)}
-					</span>
-				</span>
-			</div>
+			<SummaryBar
+				count={summary.count}
+				total={summary.total}
+				taxTotal={summary.taxTotal}
+			/>
 
 			{filtered.length > 0 ? (
-				<div className="mt-4 overflow-x-auto rounded-md border">
-					<Table>
-						<TableHeader>
-							<TableRow>
-								{activeColumns.map((col) => (
-									<TableHead
-										key={col.key}
-										className={`${col.align === "right" ? "text-right" : ""} ${
-											!col.alwaysVisible ? "hidden sm:table-cell" : ""
-										}`}
-									>
-										{col.label}
-									</TableHead>
-								))}
-							</TableRow>
-						</TableHeader>
-						<TableBody>
-							{filtered.map((receipt) => (
-								<TableRow key={receipt.id}>
-									{activeColumns.map((col) => (
-										<TableCell
-											key={col.key}
-											className={`${col.align === "right" ? "text-right" : ""} ${
-												!col.alwaysVisible ? "hidden sm:table-cell" : ""
-											}`}
-										>
-											<CellValue
-												col={col.key}
-												receipt={receipt}
-												projectMap={projectMap}
-												clientMap={clientMap}
-											/>
-										</TableCell>
-									))}
-								</TableRow>
-							))}
-						</TableBody>
-					</Table>
-				</div>
+				<ReceiptTable
+					receipts={filtered}
+					columns={activeColumns}
+					projectMap={projectMap}
+					clientMap={clientMap}
+				/>
 			) : (
 				<div className="mt-8 flex flex-col items-center justify-center rounded-lg border border-dashed p-12 text-center">
 					<p className="text-muted-foreground">
