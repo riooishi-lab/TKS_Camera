@@ -191,8 +191,8 @@ function extractFormFields(fd: FormData) {
 	return {
 		date: str("date"),
 		payee: str("payee"),
-		amount: amountStr ? Number.parseInt(amountStr, 10) : null,
-		taxAmount: taxAmountStr ? Number.parseInt(taxAmountStr, 10) : null,
+		amount: amountStr ? Math.round(Number(amountStr)) : null,
+		taxAmount: taxAmountStr ? Math.round(Number(taxAmountStr)) : null,
 		taxRateCategory: str("taxRateCategory") as "8" | "10" | "mixed" | null,
 		accountCategory: str("accountCategory"),
 		description: str("description"),
@@ -323,6 +323,7 @@ export function NewReceiptFlow() {
 					<CardContent>
 						<form onSubmit={handleSubmit} className="space-y-4">
 							<ReceiptFormFields
+								key={staffList.length}
 								extraction={extraction}
 								projects={projects}
 								clients={clients}
