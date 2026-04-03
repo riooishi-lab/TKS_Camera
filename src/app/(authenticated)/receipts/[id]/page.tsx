@@ -64,12 +64,13 @@ export default function ReceiptDetailPage() {
 
 	return (
 		<div>
-			<div className="mb-6 flex items-center justify-between">
-				<div className="flex items-center gap-4">
+			<div className="mb-6 space-y-3">
+				<div className="flex items-center gap-3">
 					<Button
 						render={<Link href={PAGE_PATH.receipts} />}
 						variant="ghost"
 						size="icon"
+						className="shrink-0"
 					>
 						<ArrowLeft className="h-4 w-4" />
 					</Button>
@@ -80,10 +81,11 @@ export default function ReceiptDetailPage() {
 						<Badge variant="secondary">未確認</Badge>
 					)}
 				</div>
-				<div className="flex gap-2">
+				<div className="flex flex-wrap gap-2 pl-12">
 					{isAdmin && !receipt.isAiVerified && (
 						<Button
 							variant="outline"
+							size="sm"
 							onClick={async () => {
 								const updated = await updateReceipt(receipt.id, {
 									isAiVerified: true,
@@ -91,7 +93,7 @@ export default function ReceiptDetailPage() {
 								if (updated) setReceipt(updated);
 							}}
 						>
-							<CheckCircle className="mr-2 h-4 w-4" />
+							<CheckCircle className="mr-1.5 h-4 w-4" />
 							確認済みにする
 						</Button>
 					)}
@@ -99,15 +101,16 @@ export default function ReceiptDetailPage() {
 						<Button
 							render={<Link href={PAGE_PATH.receiptEdit(receipt.id)} />}
 							variant="outline"
+							size="sm"
 						>
-							<Pencil className="mr-2 h-4 w-4" />
+							<Pencil className="mr-1.5 h-4 w-4" />
 							編集
 						</Button>
 					)}
 					{isAdmin && (
 						<Dialog>
-							<DialogTrigger render={<Button variant="outline" />}>
-								<Trash2 className="mr-2 h-4 w-4" />
+							<DialogTrigger render={<Button variant="outline" size="sm" />}>
+								<Trash2 className="mr-1.5 h-4 w-4" />
 								削除
 							</DialogTrigger>
 							<DialogContent>

@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/select";
 import { ACCOUNT_CATEGORIES } from "@/constants/accountCategories";
 import { PAGE_PATH } from "@/constants/pagePath";
+import { useAuth } from "@/contexts/AuthContext";
 import {
 	type Client,
 	fileToBase64,
@@ -35,11 +36,13 @@ function ReceiptFormFields({
 	projects,
 	clients,
 	staffList,
+	defaultPersonInCharge,
 }: {
 	extraction: ReceiptExtraction;
 	projects: Project[];
 	clients: Client[];
 	staffList: Staff[];
+	defaultPersonInCharge?: string;
 }) {
 	return (
 		<div className="space-y-4">
@@ -169,7 +172,7 @@ function ReceiptFormFields({
 				<NativeSelect
 					id="personInCharge"
 					name="personInCharge"
-					defaultValue=""
+					defaultValue={defaultPersonInCharge ?? ""}
 					placeholder="選択"
 					options={staffList.map((s) => ({
 						value: s.name,
@@ -188,8 +191,8 @@ function extractFormFields(fd: FormData) {
 	return {
 		date: str("date"),
 		payee: str("payee"),
-		amount: amountStr ? Number.parseInt(amountStr, 10) : null,
-		taxAmount: taxAmountStr ? Number.parseInt(taxAmountStr, 10) : null,
+		amount: amountStr ? Math.round(Number(amountStr)) : null,
+		taxAmount: taxAmountStr ? Math.round(Number(taxAmountStr)) : null,
 		taxRateCategory: str("taxRateCategory") as "8" | "10" | "mixed" | null,
 		accountCategory: str("accountCategory"),
 		description: str("description"),
@@ -201,6 +204,7 @@ function extractFormFields(fd: FormData) {
 }
 
 export function NewReceiptFlow() {
+	const { tksUser } = useAuth();
 	const [step, setStep] = useState<"capture" | "analyzing" | "form">("capture");
 	const [imageBase64, setImageBase64] = useState("");
 	const [extraction, setExtraction] = useState<ReceiptExtraction | null>(null);
@@ -319,10 +323,12 @@ export function NewReceiptFlow() {
 					<CardContent>
 						<form onSubmit={handleSubmit} className="space-y-4">
 							<ReceiptFormFields
+								key={staffList.length}
 								extraction={extraction}
 								projects={projects}
 								clients={clients}
 								staffList={staffList}
+								defaultPersonInCharge={tksUser?.name ?? undefined}
 							/>
 							<Button type="submit" className="w-full" disabled={isSaving}>
 								{isSaving ? "登録中..." : "レシートを登録"}
