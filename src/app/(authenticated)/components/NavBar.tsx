@@ -69,6 +69,10 @@ const allNavItems: NavItem[] = [
 	},
 ];
 
+function isActiveLink(pathname: string, href: string): boolean {
+	return pathname === href || pathname.startsWith(`${href}/`);
+}
+
 export function NavBar() {
 	const pathname = usePathname();
 	const { tksUser, logout } = useAuth();
@@ -109,7 +113,7 @@ export function NavBar() {
 									onClick={() => setSheetOpen(false)}
 									className={cn(
 										"flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors hover:bg-accent",
-										pathname.startsWith(item.href)
+										isActiveLink(pathname, item.href)
 											? "bg-accent text-accent-foreground"
 											: "text-muted-foreground",
 									)}
@@ -145,7 +149,7 @@ export function NavBar() {
 							href={item.href}
 							className={cn(
 								"flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors hover:bg-accent",
-								pathname.startsWith(item.href)
+								isActiveLink(pathname, item.href)
 									? "bg-accent text-accent-foreground"
 									: "text-muted-foreground",
 							)}
