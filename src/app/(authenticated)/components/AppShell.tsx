@@ -96,6 +96,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 		<div className="min-h-screen bg-background">
 			{/* デスクトップ用固定サイドバー */}
 			<aside
+				id="app-sidebar"
+				aria-label="メインナビゲーション"
 				className={cn(
 					"fixed inset-y-0 left-0 z-40 hidden border-r bg-background transition-[width] md:flex md:flex-col",
 					collapsed ? "w-16" : "w-60",
@@ -117,6 +119,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 							<Link
 								key={item.href}
 								href={item.href}
+								aria-label={collapsed ? item.label : undefined}
+								aria-current={active ? "page" : undefined}
 								title={collapsed ? item.label : undefined}
 								className={cn(
 									"flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors hover:bg-accent",
@@ -159,23 +163,30 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 									レシートスキャナー
 								</SheetTitle>
 							</SheetHeader>
-							<nav className="mt-4 flex flex-col gap-1">
-								{navItems.map((item) => (
-									<Link
-										key={item.href}
-										href={item.href}
-										onClick={() => setSheetOpen(false)}
-										className={cn(
-											"flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors hover:bg-accent",
-											isActiveLink(pathname, item.href)
-												? "bg-accent text-accent-foreground"
-												: "text-muted-foreground",
-										)}
-									>
-										<item.icon className="h-4 w-4" />
-										{item.label}
-									</Link>
-								))}
+							<nav
+								aria-label="メインナビゲーション"
+								className="mt-4 flex flex-col gap-1"
+							>
+								{navItems.map((item) => {
+									const active = isActiveLink(pathname, item.href);
+									return (
+										<Link
+											key={item.href}
+											href={item.href}
+											aria-current={active ? "page" : undefined}
+											onClick={() => setSheetOpen(false)}
+											className={cn(
+												"flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors hover:bg-accent",
+												active
+													? "bg-accent text-accent-foreground"
+													: "text-muted-foreground",
+											)}
+										>
+											<item.icon className="h-4 w-4" />
+											{item.label}
+										</Link>
+									);
+								})}
 								<button
 									type="button"
 									onClick={handleLogout}
@@ -195,6 +206,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 						className="hidden md:inline-flex"
 						onClick={() => setCollapsed((c) => !c)}
 						aria-label={collapsed ? "サイドバーを開く" : "サイドバーを閉じる"}
+						aria-expanded={!collapsed}
+						aria-controls="app-sidebar"
 					>
 						{collapsed ? (
 							<PanelLeftOpen className="h-5 w-5" />
