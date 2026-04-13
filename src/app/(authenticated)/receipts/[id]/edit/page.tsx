@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/select";
 import { ACCOUNT_CATEGORIES } from "@/constants/accountCategories";
 import { PAGE_PATH } from "@/constants/pagePath";
+import { useAuth } from "@/contexts/AuthContext";
 import type { Receipt } from "@/libs/storage";
 import {
 	type Client,
@@ -25,18 +26,26 @@ import {
 	getProjects,
 	getReceipt,
 	getStaff,
+	getTags,
+	getTagsForReceipt,
 	type Project,
 	type Staff,
+	setReceiptTags,
+	type Tag,
 	updateReceipt,
 } from "@/libs/storage";
+import { TagPicker } from "../../components/TagPicker";
 
 export default function EditReceiptPage() {
 	const params = useParams<{ id: string }>();
 	const router = useRouter();
+	const { tksUser } = useAuth();
 	const [receipt, setReceipt] = useState<Receipt | null>(null);
 	const [projects, setProjects] = useState<Project[]>([]);
 	const [clients, setClients] = useState<Client[]>([]);
 	const [staffList, setStaffList] = useState<Staff[]>([]);
+	const [allTags, setAllTags] = useState<Tag[]>([]);
+	const [selectedTagIds, setSelectedTagIds] = useState<string[]>([]);
 	const [isSaving, setIsSaving] = useState(false);
 
 	useEffect(() => {
@@ -50,6 +59,8 @@ export default function EditReceiptPage() {
 		getProjects().then(setProjects);
 		getClients().then(setClients);
 		getStaff().then(setStaffList);
+		getTags().then(setAllTags);
+		getTagsForReceipt(params.id).then(setSelectedTagIds);
 	}, [params.id, router]);
 
 	if (!receipt) return null;
@@ -61,22 +72,27 @@ export default function EditReceiptPage() {
 		const amountStr = fd.get("amount") as string;
 		const taxAmountStr = fd.get("taxAmount") as string;
 
-		await updateReceipt(params.id, {
-			date: (fd.get("date") as string) || null,
-			payee: (fd.get("payee") as string) || null,
-			amount: amountStr ? Number.parseInt(amountStr, 10) : null,
-			taxAmount: taxAmountStr ? Number.parseInt(taxAmountStr, 10) : null,
-			taxRateCategory:
-				(fd.get("taxRateCategory") as "8" | "10" | "mixed") || null,
-			accountCategory: (fd.get("accountCategory") as string) || null,
-			description: (fd.get("description") as string) || null,
-			invoiceRegistrationNo:
-				(fd.get("invoiceRegistrationNo") as string) || null,
-			projectId: (fd.get("projectId") as string) || null,
-			clientId: (fd.get("clientId") as string) || null,
-			personInCharge: (fd.get("personInCharge") as string) || null,
-			isAiVerified: true,
-		});
+		await updateReceipt(
+			params.id,
+			{
+				date: (fd.get("date") as string) || null,
+				payee: (fd.get("payee") as string) || null,
+				amount: amountStr ? Number.parseInt(amountStr, 10) : null,
+				taxAmount: taxAmountStr ? Number.parseInt(taxAmountStr, 10) : null,
+				taxRateCategory:
+					(fd.get("taxRateCategory") as "8" | "10" | "mixed") || null,
+				accountCategory: (fd.get("accountCategory") as string) || null,
+				description: (fd.get("description") as string) || null,
+				invoiceRegistrationNo:
+					(fd.get("invoiceRegistrationNo") as string) || null,
+				projectId: (fd.get("projectId") as string) || null,
+				clientId: (fd.get("clientId") as string) || null,
+				personInCharge: (fd.get("personInCharge") as string) || null,
+				isAiVerified: true,
+			},
+			tksUser?.id ?? null,
+		);
+		await setReceiptTags(params.id, selectedTagIds, tksUser?.id ?? null);
 
 		window.location.href = PAGE_PATH.receiptDetail(params.id);
 	};
@@ -248,6 +264,14 @@ export default function EditReceiptPage() {
 										value: s.name,
 										label: s.name,
 									}))}
+								/>
+							</div>
+							<div className="space-y-2">
+								<Label>タグ</Label>
+								<TagPicker
+									allTags={allTags}
+									selectedIds={selectedTagIds}
+									onChange={setSelectedTagIds}
 								/>
 							</div>
 							<Button type="submit" className="w-full" disabled={isSaving}>

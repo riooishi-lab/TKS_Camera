@@ -1,10 +1,11 @@
 "use client";
 
-import { Plus, Settings2 } from "lucide-react";
+import { Download, Plus, Settings2 } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
 	Table,
 	TableBody,
@@ -20,13 +21,18 @@ import {
 	getClients,
 	getProjects,
 	getReceipts,
+	getReceiptTags,
 	getStaff,
+	getTags,
 	type Project,
 	type Receipt,
 	type Staff,
+	type Tag,
 } from "@/libs/storage";
+import { downloadCsv, toCsv } from "@/utils/csv";
 import { formatCurrency } from "@/utils/formatCurrency";
 import { formatDate } from "@/utils/formatDate";
+import { TagBadges } from "./components/TagPicker";
 
 type ColumnKey =
 	| "date"
@@ -38,6 +44,7 @@ type ColumnKey =
 	| "personInCharge"
 	| "description"
 	| "taxAmount"
+	| "tags"
 	| "status";
 
 type ColumnDef = {
@@ -58,6 +65,7 @@ const ALL_COLUMNS: ColumnDef[] = [
 	{ key: "personInCharge", label: "担当者", defaultVisible: false },
 	{ key: "description", label: "摘要", defaultVisible: false },
 	{ key: "taxAmount", label: "税額", defaultVisible: false, align: "right" },
+	{ key: "tags", label: "タグ", defaultVisible: false },
 	{ key: "status", label: "状態", defaultVisible: true },
 ];
 
@@ -85,11 +93,15 @@ function CellValue({
 	receipt,
 	projectMap,
 	clientMap,
+	tagMap,
+	receiptTagMap,
 }: {
 	col: ColumnKey;
 	receipt: Receipt;
 	projectMap: Map<string, string>;
 	clientMap: Map<string, string>;
+	tagMap: Map<string, Tag>;
+	receiptTagMap: Map<string, string[]>;
 }) {
 	switch (col) {
 		case "date":
@@ -128,6 +140,11 @@ function CellValue({
 			return receipt.personInCharge ?? "-";
 		case "description":
 			return receipt.description ?? "-";
+		case "tags": {
+			const ids = receiptTagMap.get(receipt.id) ?? [];
+			const tags = ids.map((id) => tagMap.get(id)).filter((t): t is Tag => !!t);
+			return <TagBadges tags={tags} />;
+		}
 		case "status":
 			return receipt.isAiVerified ? (
 				<Badge variant="default">確認済</Badge>
@@ -198,63 +215,147 @@ function ColumnSettings({
 	);
 }
 
+type FilterState = {
+	month: string;
+	clientId: string;
+	projectId: string;
+	payeeQuery: string;
+	amountMin: string;
+	amountMax: string;
+	tagIds: string[];
+};
+
 function FilterBar({
-	filterMonth,
-	setFilterMonth,
-	filterClient,
-	setFilterClient,
-	filterProject,
-	setFilterProject,
+	filters,
+	setFilters,
 	months,
 	clients,
 	projects,
+	tags,
 }: {
-	filterMonth: string;
-	setFilterMonth: (v: string) => void;
-	filterClient: string;
-	setFilterClient: (v: string) => void;
-	filterProject: string;
-	setFilterProject: (v: string) => void;
+	filters: FilterState;
+	setFilters: (updater: (prev: FilterState) => FilterState) => void;
 	months: string[];
 	clients: Client[];
 	projects: Project[];
+	tags: Tag[];
 }) {
-	const hasFilter = filterMonth || filterClient || filterProject;
+	const hasFilter =
+		filters.month ||
+		filters.clientId ||
+		filters.projectId ||
+		filters.payeeQuery ||
+		filters.amountMin ||
+		filters.amountMax ||
+		filters.tagIds.length > 0;
+	const toggleTag = (id: string) => {
+		setFilters((prev) => {
+			const has = prev.tagIds.includes(id);
+			return {
+				...prev,
+				tagIds: has
+					? prev.tagIds.filter((t) => t !== id)
+					: [...prev.tagIds, id],
+			};
+		});
+	};
 	return (
-		<div className="mt-4 flex flex-wrap items-center gap-2">
-			<FilterSelect
-				value={filterMonth}
-				onChange={setFilterMonth}
-				placeholder="全期間"
-				options={months.map((ym) => ({
-					value: ym,
-					label: formatYearMonth(ym),
-				}))}
-			/>
-			<FilterSelect
-				value={filterClient}
-				onChange={setFilterClient}
-				placeholder="全顧客"
-				options={clients.map((c) => ({ value: c.id, label: c.name }))}
-			/>
-			<FilterSelect
-				value={filterProject}
-				onChange={setFilterProject}
-				placeholder="全PJ"
-				options={projects.map((p) => ({ value: p.id, label: p.name }))}
-			/>
-			{hasFilter && (
-				<button
-					type="button"
-					onClick={() => {
-						setFilterMonth("");
-						setFilterProject("");
-						setFilterClient("");
-					}}
-					className="text-xs text-muted-foreground hover:text-foreground"
-				>
-					クリア
-				</button>
+		<div className="mt-4 space-y-2">
+			<div className="flex flex-wrap items-center gap-2">
+				<FilterSelect
+					value={filters.month}
+					onChange={(v) => setFilters((p) => ({ ...p, month: v }))}
+					placeholder="全期間"
+					options={months.map((ym) => ({
+						value: ym,
+						label: formatYearMonth(ym),
+					}))}
+				/>
+				<FilterSelect
+					value={filters.clientId}
+					onChange={(v) => setFilters((p) => ({ ...p, clientId: v }))}
+					placeholder="全顧客"
+					options={clients.map((c) => ({ value: c.id, label: c.name }))}
+				/>
+				<FilterSelect
+					value={filters.projectId}
+					onChange={(v) => setFilters((p) => ({ ...p, projectId: v }))}
+					placeholder="全PJ"
+					options={projects.map((p) => ({ value: p.id, label: p.name }))}
+				/>
+				<Input
+					placeholder="支払先で検索"
+					value={filters.payeeQuery}
+					onChange={(e) =>
+						setFilters((p) => ({ ...p, payeeQuery: e.target.value }))
+					}
+					className="h-8 w-44"
+				/>
+				<Input
+					type="number"
+					placeholder="最小額"
+					value={filters.amountMin}
+					onChange={(e) =>
+						setFilters((p) => ({ ...p, amountMin: e.target.value }))
+					}
+					className="h-8 w-24"
+				/>
+				<span className="text-xs text-muted-foreground">〜</span>
+				<Input
+					type="number"
+					placeholder="最大額"
+					value={filters.amountMax}
+					onChange={(e) =>
+						setFilters((p) => ({ ...p, amountMax: e.target.value }))
+					}
+					className="h-8 w-24"
+				/>
+				{hasFilter && (
+					<button
+						type="button"
+						onClick={() =>
+							setFilters(() => ({
+								month: "",
+								clientId: "",
+								projectId: "",
+								payeeQuery: "",
+								amountMin: "",
+								amountMax: "",
+								tagIds: [],
+							}))
+						}
+						className="text-xs text-muted-foreground hover:text-foreground"
+					>
+						クリア
+					</button>
+				)}
+			</div>
+			{tags.length > 0 && (
+				<div className="flex flex-wrap items-center gap-1.5">
+					<span className="mr-1 text-xs text-muted-foreground">タグ:</span>
+					{tags.map((tag) => {
+						const active = filters.tagIds.includes(tag.id);
+						return (
+							<button
+								key={tag.id}
+								type="button"
+								onClick={() => toggleTag(tag.id)}
+								className={`rounded-full border px-2 py-0.5 text-xs transition-colors ${
+									active
+										? "border-primary bg-primary/10 text-primary"
+										: "border-border text-muted-foreground hover:border-primary/50"
+								}`}
+								style={
+									active && tag.color
+										? { borderColor: tag.color, color: tag.color }
+										: undefined
+								}
+							>
+								{tag.name}
+							</button>
+						);
+					})}
+				</div>
 			)}
 		</div>
 	);
@@ -265,11 +366,15 @@ function ReceiptTable({
 	columns,
 	projectMap,
 	clientMap,
+	tagMap,
+	receiptTagMap,
 }: {
 	receipts: Receipt[];
 	columns: ColumnDef[];
 	projectMap: Map<string, string>;
 	clientMap: Map<string, string>;
+	tagMap: Map<string, Tag>;
+	receiptTagMap: Map<string, string[]>;
 }) {
 	return (
 		<div className="mt-4 overflow-x-auto rounded-md border">
@@ -303,6 +408,8 @@ function ReceiptTable({
 										receipt={receipt}
 										projectMap={projectMap}
 										clientMap={clientMap}
+										tagMap={tagMap}
+										receiptTagMap={receiptTagMap}
 									/>
 								</TableCell>
 							))}
@@ -350,6 +457,57 @@ function formatYearMonth(ym: string): string {
 	return `${y}年${Number(m)}月`;
 }
 
+function exportReceiptsToCsv(params: {
+	receipts: Receipt[];
+	projectMap: Map<string, string>;
+	clientMap: Map<string, string>;
+	tagMap: Map<string, Tag>;
+	receiptTagMap: Map<string, string[]>;
+}) {
+	const { receipts, projectMap, clientMap, tagMap, receiptTagMap } = params;
+	const header = [
+		"日付",
+		"支払先",
+		"金額(税込)",
+		"消費税額",
+		"税率区分",
+		"勘定科目",
+		"摘要",
+		"インボイス登録番号",
+		"プロジェクト",
+		"顧客",
+		"担当者",
+		"タグ",
+		"状態",
+		"登録日時",
+	];
+	const body = receipts.map((r) => {
+		const tagNames = (receiptTagMap.get(r.id) ?? [])
+			.map((id) => tagMap.get(id)?.name)
+			.filter(Boolean)
+			.join(";");
+		return [
+			r.date ?? "",
+			r.payee ?? "",
+			r.amount ?? "",
+			r.taxAmount ?? "",
+			r.taxRateCategory ?? "",
+			r.accountCategory ?? "",
+			r.description ?? "",
+			r.invoiceRegistrationNo ?? "",
+			r.projectId ? (projectMap.get(r.projectId) ?? "") : "",
+			r.clientId ? (clientMap.get(r.clientId) ?? "") : "",
+			r.personInCharge ?? "",
+			tagNames,
+			r.isAiVerified ? "確認済" : "未確認",
+			r.createdAt,
+		];
+	});
+	const csv = toCsv([header, ...body]);
+	const stamp = new Date().toISOString().slice(0, 10);
+	downloadCsv(`receipts_${stamp}.csv`, csv);
+}
+
 export default function ReceiptsPage() {
 	const { tksUser } = useAuth();
 	const canCreate = tksUser?.role === "admin" || tksUser?.role === "editor";
@@ -357,10 +515,20 @@ export default function ReceiptsPage() {
 	const [projects, setProjects] = useState<Project[]>([]);
 	const [clients, setClients] = useState<Client[]>([]);
 	const [_staffList, setStaffList] = useState<Staff[]>([]);
+	const [tags, setTags] = useState<Tag[]>([]);
+	const [receiptTagMap, setReceiptTagMap] = useState<Map<string, string[]>>(
+		new Map(),
+	);
 
-	const [filterMonth, setFilterMonth] = useState("");
-	const [filterProject, setFilterProject] = useState("");
-	const [filterClient, setFilterClient] = useState("");
+	const [filters, setFilters] = useState<FilterState>({
+		month: "",
+		clientId: "",
+		projectId: "",
+		payeeQuery: "",
+		amountMin: "",
+		amountMax: "",
+		tagIds: [],
+	});
 
 	const [visibleCols, setVisibleCols] =
 		useState<Set<ColumnKey>>(loadVisibleColumns);
@@ -371,12 +539,15 @@ export default function ReceiptsPage() {
 		getProjects().then(setProjects);
 		getClients().then(setClients);
 		getStaff().then(setStaffList);
+		getTags().then(setTags);
+		getReceiptTags().then(setReceiptTagMap);
 	}, []);
 
 	const toggleColumn = (key: ColumnKey) => {
 		setVisibleCols((prev) => {
 			const next = new Set(prev);
-			next.has(key) ? next.delete(key) : next.add(key);
+			if (next.has(key)) next.delete(key);
+			else next.add(key);
 			localStorage.setItem(STORAGE_KEY, JSON.stringify([...next]));
 			return next;
 		});
@@ -388,7 +559,9 @@ export default function ReceiptsPage() {
 
 	const months = useMemo(() => {
 		const set = new Set(
-			receipts.filter((r) => r.date).map((r) => getYearMonth(r.date!)),
+			receipts
+				.filter((r): r is Receipt & { date: string } => r.date !== null)
+				.map((r) => getYearMonth(r.date)),
 		);
 		return Array.from(set).sort().reverse();
 	}, [receipts]);
@@ -403,16 +576,32 @@ export default function ReceiptsPage() {
 		for (const c of clients) m.set(c.id, c.name);
 		return m;
 	}, [clients]);
+	const tagMap = useMemo(() => {
+		const m = new Map<string, Tag>();
+		for (const t of tags) m.set(t.id, t);
+		return m;
+	}, [tags]);
 
 	const filtered = useMemo(() => {
+		const min = filters.amountMin ? Number(filters.amountMin) : null;
+		const max = filters.amountMax ? Number(filters.amountMax) : null;
+		const q = filters.payeeQuery.trim().toLowerCase();
 		return receipts.filter((r) => {
-			if (filterMonth && (!r.date || getYearMonth(r.date) !== filterMonth))
+			if (filters.month && (!r.date || getYearMonth(r.date) !== filters.month))
 				return false;
-			if (filterProject && r.projectId !== filterProject) return false;
-			if (filterClient && r.clientId !== filterClient) return false;
+			if (filters.projectId && r.projectId !== filters.projectId) return false;
+			if (filters.clientId && r.clientId !== filters.clientId) return false;
+			if (q && !(r.payee ?? "").toLowerCase().includes(q)) return false;
+			if (min != null && (r.amount ?? 0) < min) return false;
+			if (max != null && (r.amount ?? 0) > max) return false;
+			if (filters.tagIds.length > 0) {
+				const rTags = receiptTagMap.get(r.id) ?? [];
+				const match = filters.tagIds.every((t) => rTags.includes(t));
+				if (!match) return false;
+			}
 			return true;
 		});
-	}, [receipts, filterMonth, filterProject, filterClient]);
+	}, [receipts, filters, receiptTagMap]);
 
 	const summary = useMemo(
 		() => ({
@@ -423,13 +612,38 @@ export default function ReceiptsPage() {
 		[filtered],
 	);
 
-	const hasFilter = Boolean(filterMonth || filterProject || filterClient);
+	const hasFilter =
+		filters.month ||
+		filters.projectId ||
+		filters.clientId ||
+		filters.payeeQuery ||
+		filters.amountMin ||
+		filters.amountMax ||
+		filters.tagIds.length > 0;
 
 	return (
 		<div>
 			<div className="flex items-center justify-between">
 				<h1 className="text-2xl font-bold">レシート一覧</h1>
 				<div className="flex items-center gap-2">
+					<Button
+						variant="outline"
+						size="sm"
+						onClick={() =>
+							exportReceiptsToCsv({
+								receipts: filtered,
+								projectMap,
+								clientMap,
+								tagMap,
+								receiptTagMap,
+							})
+						}
+						disabled={filtered.length === 0}
+						title="表示中のレシートをCSV出力"
+					>
+						<Download className="mr-1.5 h-4 w-4" />
+						CSV
+					</Button>
 					<Button
 						variant="ghost"
 						size="icon"
@@ -452,15 +666,12 @@ export default function ReceiptsPage() {
 			)}
 
 			<FilterBar
-				filterMonth={filterMonth}
-				setFilterMonth={setFilterMonth}
-				filterClient={filterClient}
-				setFilterClient={setFilterClient}
-				filterProject={filterProject}
-				setFilterProject={setFilterProject}
+				filters={filters}
+				setFilters={setFilters}
 				months={months}
 				clients={clients}
 				projects={projects}
+				tags={tags}
 			/>
 
 			<SummaryBar
@@ -475,6 +686,8 @@ export default function ReceiptsPage() {
 					columns={activeColumns}
 					projectMap={projectMap}
 					clientMap={clientMap}
+					tagMap={tagMap}
+					receiptTagMap={receiptTagMap}
 				/>
 			) : (
 				<div className="mt-8 flex flex-col items-center justify-center rounded-lg border border-dashed p-12 text-center">
