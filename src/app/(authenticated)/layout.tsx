@@ -4,7 +4,7 @@ import { Loader2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 import { useAuth } from "@/contexts/AuthContext";
-import { NavBar } from "./components/NavBar";
+import { AppShell } from "./components/AppShell";
 
 export default function AuthenticatedLayout({
 	children,
@@ -34,10 +34,5 @@ export default function AuthenticatedLayout({
 
 	if (!firebaseUser || !tksUser) return null;
 
-	return (
-		<div className="min-h-screen bg-background">
-			<NavBar />
-			<main className="container mx-auto px-4 py-6">{children}</main>
-		</div>
-	);
+	return <AppShell>{children}</AppShell>;
 }
