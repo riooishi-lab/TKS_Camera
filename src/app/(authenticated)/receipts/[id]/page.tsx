@@ -22,17 +22,24 @@ import { useAuth } from "@/contexts/AuthContext";
 import {
 	deleteReceipt,
 	getReceipt,
+	getTags,
+	getTagsForReceipt,
 	type Receipt,
+	type Tag,
 	updateReceipt,
 } from "@/libs/storage";
 import { formatCurrency } from "@/utils/formatCurrency";
 import { formatDate } from "@/utils/formatDate";
+import { AuditLogList } from "../components/AuditLogList";
+import { TagBadges } from "../components/TagPicker";
 
 export default function ReceiptDetailPage() {
 	const params = useParams<{ id: string }>();
 	const router = useRouter();
 	const { tksUser } = useAuth();
 	const [receipt, setReceipt] = useState<Receipt | null>(null);
+	const [tags, setTags] = useState<Tag[]>([]);
+	const [tagIds, setTagIds] = useState<string[]>([]);
 	const isAdmin = tksUser?.role === "admin";
 	const canEdit = tksUser?.role === "admin" || tksUser?.role === "editor";
 
@@ -44,7 +51,11 @@ export default function ReceiptDetailPage() {
 			}
 			setReceipt(r);
 		});
+		getTags().then(setTags);
+		getTagsForReceipt(params.id).then(setTagIds);
 	}, [params.id, router]);
+
+	const receiptTags = tags.filter((t) => tagIds.includes(t.id));
 
 	if (!receipt) return null;
 
@@ -58,7 +69,7 @@ export default function ReceiptDetailPage() {
 					: null;
 
 	const handleDelete = async () => {
-		await deleteReceipt(receipt.id);
+		await deleteReceipt(receipt.id, tksUser?.id ?? null);
 		window.location.href = PAGE_PATH.receipts;
 	};
 
@@ -87,9 +98,11 @@ export default function ReceiptDetailPage() {
 							variant="outline"
 							size="sm"
 							onClick={async () => {
-								const updated = await updateReceipt(receipt.id, {
-									isAiVerified: true,
-								});
+								const updated = await updateReceipt(
+									receipt.id,
+									{ isAiVerified: true },
+									tksUser?.id ?? null,
+								);
 								if (updated) setReceipt(updated);
 							}}
 						>
@@ -187,7 +200,23 @@ export default function ReceiptDetailPage() {
 						/>
 						<Separator />
 						<DetailRow label="担当者" value={receipt.personInCharge} />
+						<Separator />
+						<div className="flex items-start justify-between text-sm">
+							<span className="text-muted-foreground">タグ</span>
+							<div className="max-w-[70%]">
+								<TagBadges tags={receiptTags} />
+							</div>
+						</div>
 						<DetailRow label="登録日" value={formatDate(receipt.createdAt)} />
+					</CardContent>
+				</Card>
+
+				<Card className="lg:col-span-2">
+					<CardHeader>
+						<CardTitle className="text-lg">編集履歴</CardTitle>
+					</CardHeader>
+					<CardContent>
+						<AuditLogList receiptId={receipt.id} />
 					</CardContent>
 				</Card>
 			</div>

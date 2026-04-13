@@ -55,8 +55,29 @@ export type Receipt = {
 	aiRawResponse: Record<string, unknown> | null;
 	aiConfidence: number | null;
 	isAiVerified: boolean;
+	createdBy: string | null;
+	updatedBy: string | null;
 	createdAt: string;
 	updatedAt: string;
+};
+
+export type Tag = {
+	id: string;
+	name: string;
+	color: string | null;
+	createdAt: string;
+};
+
+export type AuditAction = "create" | "update" | "delete";
+
+export type AuditLog = {
+	id: string;
+	entityType: string;
+	entityId: string;
+	action: AuditAction;
+	changedBy: string | null;
+	changedAt: string;
+	diff: Record<string, unknown> | null;
 };
 
 // ===== Receipts =====
@@ -81,7 +102,11 @@ export async function getReceipt(id: string): Promise<Receipt | null> {
 }
 
 export async function saveReceipt(
-	input: Omit<Receipt, "id" | "createdAt" | "updatedAt">,
+	input: Omit<
+		Receipt,
+		"id" | "createdAt" | "updatedAt" | "createdBy" | "updatedBy"
+	>,
+	actorUserId?: string | null,
 ): Promise<Receipt> {
 	const { data, error } = await getSupabase()
 		.from("tks_receipts")
@@ -101,18 +126,29 @@ export async function saveReceipt(
 			ai_raw_response: input.aiRawResponse,
 			ai_confidence: input.aiConfidence,
 			is_ai_verified: input.isAiVerified,
+			created_by: actorUserId ?? null,
+			updated_by: actorUserId ?? null,
 		})
 		.select()
 		.single();
 	if (error) throw new Error(error.message);
-	return mapReceipt(data);
+	const mapped = mapReceipt(data);
+	await writeAuditLog("receipt", mapped.id, "create", actorUserId, {
+		after: stripReceiptForAudit(mapped),
+	});
+	return mapped;
 }
 
 export async function updateReceipt(
 	id: string,
 	input: Partial<Omit<Receipt, "id" | "createdAt">>,
+	actorUserId?: string | null,
 ): Promise<Receipt | null> {
-	const row: Record<string, unknown> = { updated_at: new Date().toISOString() };
+	const before = await getReceipt(id);
+	const row: Record<string, unknown> = {
+		updated_at: new Date().toISOString(),
+		updated_by: actorUserId ?? null,
+	};
 	if (input.date !== undefined) row.date = input.date;
 	if (input.payee !== undefined) row.payee = input.payee;
 	if (input.amount !== undefined) row.amount = input.amount;
@@ -136,15 +172,51 @@ export async function updateReceipt(
 		.eq("id", id)
 		.select()
 		.single();
-	return data ? mapReceipt(data) : null;
+	if (!data) return null;
+	const after = mapReceipt(data);
+	const diff = buildReceiptDiff(before, after);
+	if (Object.keys(diff).length > 0) {
+		await writeAuditLog("receipt", id, "update", actorUserId, { diff });
+	}
+	return after;
 }
 
-export async function deleteReceipt(id: string): Promise<boolean> {
+export async function deleteReceipt(
+	id: string,
+	actorUserId?: string | null,
+): Promise<boolean> {
+	const before = await getReceipt(id);
 	const { error } = await getSupabase()
 		.from("tks_receipts")
 		.delete()
 		.eq("id", id);
-	return !error;
+	if (error) return false;
+	await writeAuditLog("receipt", id, "delete", actorUserId, {
+		before: before ? stripReceiptForAudit(before) : null,
+	});
+	return true;
+}
+
+export async function findDuplicateReceipts(params: {
+	date: string | null;
+	payee: string | null;
+	amount: number | null;
+	excludeId?: string;
+}): Promise<Receipt[]> {
+	if (!params.date || !params.payee || params.amount == null) return [];
+	let q = getSupabase()
+		.from("tks_receipts")
+		.select("*")
+		.eq("date", params.date)
+		.eq("payee", params.payee)
+		.eq("amount", params.amount);
+	if (params.excludeId) q = q.neq("id", params.excludeId);
+	const { data, error } = await q;
+	if (error) {
+		console.error("findDuplicateReceipts:", error.message);
+		return [];
+	}
+	return (data ?? []).map(mapReceipt);
 }
 
 function mapReceipt(r: Record<string, unknown>): Receipt {
@@ -165,9 +237,46 @@ function mapReceipt(r: Record<string, unknown>): Receipt {
 		aiRawResponse: r.ai_raw_response as Record<string, unknown> | null,
 		aiConfidence: r.ai_confidence as number | null,
 		isAiVerified: r.is_ai_verified as boolean,
+		createdBy: (r.created_by as string | null) ?? null,
+		updatedBy: (r.updated_by as string | null) ?? null,
 		createdAt: r.created_at as string,
 		updatedAt: r.updated_at as string,
 	};
+}
+
+const AUDITED_RECEIPT_FIELDS: (keyof Receipt)[] = [
+	"date",
+	"payee",
+	"amount",
+	"taxAmount",
+	"taxRateCategory",
+	"accountCategory",
+	"description",
+	"invoiceRegistrationNo",
+	"projectId",
+	"clientId",
+	"personInCharge",
+	"isAiVerified",
+];
+
+function stripReceiptForAudit(r: Receipt): Record<string, unknown> {
+	const out: Record<string, unknown> = {};
+	for (const k of AUDITED_RECEIPT_FIELDS) out[k] = r[k];
+	return out;
+}
+
+function buildReceiptDiff(
+	before: Receipt | null,
+	after: Receipt,
+): Record<string, { from: unknown; to: unknown }> {
+	const diff: Record<string, { from: unknown; to: unknown }> = {};
+	if (!before) return diff;
+	for (const k of AUDITED_RECEIPT_FIELDS) {
+		if (before[k] !== after[k]) {
+			diff[k] = { from: before[k], to: after[k] };
+		}
+	}
+	return diff;
 }
 
 // ===== Projects =====
@@ -431,6 +540,167 @@ function mapUser(u: Record<string, unknown>): TksUser {
 		inviteCode: u.invite_code as string | null,
 		invitedBy: u.invited_by as string | null,
 		createdAt: u.created_at as string,
+	};
+}
+
+// ===== Tags =====
+
+export async function getTags(): Promise<Tag[]> {
+	const { data, error } = await getSupabase()
+		.from("tks_tags")
+		.select("*")
+		.order("name", { ascending: true });
+	if (error) console.error("getTags:", error.message);
+	return (data ?? []).map(mapTag);
+}
+
+export async function saveTag(
+	name: string,
+	color: string | null = null,
+): Promise<Tag> {
+	const { data, error } = await getSupabase()
+		.from("tks_tags")
+		.insert({ name, color })
+		.select()
+		.single();
+	if (error) throw new Error(error.message);
+	return mapTag(data);
+}
+
+export async function updateTag(
+	id: string,
+	input: Partial<{ name: string; color: string | null }>,
+): Promise<Tag | null> {
+	const { data } = await getSupabase()
+		.from("tks_tags")
+		.update(input)
+		.eq("id", id)
+		.select()
+		.single();
+	return data ? mapTag(data) : null;
+}
+
+export async function deleteTag(id: string): Promise<boolean> {
+	const { error } = await getSupabase().from("tks_tags").delete().eq("id", id);
+	return !error;
+}
+
+function mapTag(t: Record<string, unknown>): Tag {
+	return {
+		id: t.id as string,
+		name: t.name as string,
+		color: (t.color as string | null) ?? null,
+		createdAt: t.created_at as string,
+	};
+}
+
+// ===== Receipt <-> Tag =====
+
+export async function getReceiptTags(): Promise<Map<string, string[]>> {
+	const { data, error } = await getSupabase()
+		.from("tks_receipt_tags")
+		.select("receipt_id, tag_id");
+	if (error) {
+		console.error("getReceiptTags:", error.message);
+		return new Map();
+	}
+	const map = new Map<string, string[]>();
+	for (const row of data ?? []) {
+		const rid = row.receipt_id as string;
+		const tid = row.tag_id as string;
+		const list = map.get(rid) ?? [];
+		list.push(tid);
+		map.set(rid, list);
+	}
+	return map;
+}
+
+export async function getTagsForReceipt(receiptId: string): Promise<string[]> {
+	const { data, error } = await getSupabase()
+		.from("tks_receipt_tags")
+		.select("tag_id")
+		.eq("receipt_id", receiptId);
+	if (error) {
+		console.error("getTagsForReceipt:", error.message);
+		return [];
+	}
+	return (data ?? []).map((r) => r.tag_id as string);
+}
+
+export async function setReceiptTags(
+	receiptId: string,
+	tagIds: string[],
+	actorUserId?: string | null,
+): Promise<void> {
+	const before = await getTagsForReceipt(receiptId);
+	const beforeSet = new Set(before);
+	const afterSet = new Set(tagIds);
+	const toAdd = tagIds.filter((t) => !beforeSet.has(t));
+	const toRemove = before.filter((t) => !afterSet.has(t));
+
+	if (toRemove.length > 0) {
+		await getSupabase()
+			.from("tks_receipt_tags")
+			.delete()
+			.eq("receipt_id", receiptId)
+			.in("tag_id", toRemove);
+	}
+	if (toAdd.length > 0) {
+		await getSupabase()
+			.from("tks_receipt_tags")
+			.insert(toAdd.map((tag_id) => ({ receipt_id: receiptId, tag_id })));
+	}
+	if (toAdd.length > 0 || toRemove.length > 0) {
+		await writeAuditLog("receipt", receiptId, "update", actorUserId, {
+			diff: { tags: { from: before, to: tagIds } },
+		});
+	}
+}
+
+// ===== Audit Log =====
+
+async function writeAuditLog(
+	entityType: string,
+	entityId: string,
+	action: AuditAction,
+	actorUserId: string | null | undefined,
+	diff: Record<string, unknown>,
+): Promise<void> {
+	const { error } = await getSupabase()
+		.from("tks_audit_logs")
+		.insert({
+			entity_type: entityType,
+			entity_id: entityId,
+			action,
+			changed_by: actorUserId ?? null,
+			diff,
+		});
+	if (error) console.error("writeAuditLog:", error.message);
+}
+
+export async function getAuditLogs(
+	entityType: string,
+	entityId: string,
+): Promise<AuditLog[]> {
+	const { data, error } = await getSupabase()
+		.from("tks_audit_logs")
+		.select("*")
+		.eq("entity_type", entityType)
+		.eq("entity_id", entityId)
+		.order("changed_at", { ascending: false });
+	if (error) console.error("getAuditLogs:", error.message);
+	return (data ?? []).map(mapAuditLog);
+}
+
+function mapAuditLog(l: Record<string, unknown>): AuditLog {
+	return {
+		id: l.id as string,
+		entityType: l.entity_type as string,
+		entityId: l.entity_id as string,
+		action: l.action as AuditAction,
+		changedBy: (l.changed_by as string | null) ?? null,
+		changedAt: l.changed_at as string,
+		diff: (l.diff as Record<string, unknown> | null) ?? null,
 	};
 }
 
