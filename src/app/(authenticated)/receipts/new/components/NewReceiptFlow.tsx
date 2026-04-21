@@ -430,7 +430,7 @@ export function NewReceiptFlow() {
 		(s) => s.duplicates.length > 0 && !s.dupAcknowledged,
 	);
 
-	const handleSaveAll = async () => {
+	const handleSaveAll = async (skipAssignment = false) => {
 		if (!allReady) return;
 		if (hasPending) {
 			setGlobalError("重複警告が未確認のレシートがあります");
@@ -457,9 +457,9 @@ export function NewReceiptFlow() {
 						accountCategory: v.accountCategory || null,
 						description: v.description || null,
 						invoiceRegistrationNo: v.invoiceRegistrationNo || null,
-						projectId: v.projectId || null,
-						clientId: v.clientId || null,
-						personInCharge: v.personInCharge || null,
+						projectId: skipAssignment ? null : v.projectId || null,
+						clientId: skipAssignment ? null : v.clientId || null,
+						personInCharge: skipAssignment ? null : v.personInCharge || null,
 						imageUrl: s.imageBase64,
 						aiRawResponse: s.aiRawResponse,
 						aiConfidence: s.extraction?.confidence ?? null,
@@ -602,14 +602,25 @@ export function NewReceiptFlow() {
 
 			{anyReadyOrSaved && (
 				<Card>
-					<CardContent className="pt-6">
+					<CardContent className="space-y-2 pt-6">
 						<Button
 							className="w-full"
-							onClick={handleSaveAll}
+							onClick={() => handleSaveAll(false)}
 							disabled={isSavingAll || !allReady || hasPending}
 						>
 							{isSavingAll ? "登録中..." : `${sheets.length}件をまとめて登録`}
 						</Button>
+						<Button
+							variant="outline"
+							className="w-full"
+							onClick={() => handleSaveAll(true)}
+							disabled={isSavingAll || !allReady || hasPending}
+						>
+							未割当で登録（プロジェクト・顧客・担当者なし）
+						</Button>
+						<p className="text-center text-xs text-muted-foreground">
+							未割当で登録したレシートは、後から編集画面で割り振りできます
+						</p>
 					</CardContent>
 				</Card>
 			)}
