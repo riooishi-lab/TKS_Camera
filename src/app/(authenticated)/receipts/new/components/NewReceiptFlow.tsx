@@ -474,6 +474,11 @@ export function NewReceiptFlow() {
 			}
 			setCompleteDialogOpen(true);
 		} catch (err) {
+			setSheets((prev) =>
+				prev.map((s) =>
+					s.status === "saving" ? { ...s, status: "ready" } : s,
+				),
+			);
 			setGlobalError(err instanceof Error ? err.message : "保存に失敗しました");
 		} finally {
 			setIsSavingAll(false);
@@ -598,9 +603,6 @@ export function NewReceiptFlow() {
 			{anyReadyOrSaved && (
 				<Card>
 					<CardContent className="pt-6">
-						{globalError && (
-							<p className="mb-3 text-sm text-destructive">{globalError}</p>
-						)}
 						<Button
 							className="w-full"
 							onClick={handleSaveAll}
@@ -627,6 +629,30 @@ export function NewReceiptFlow() {
 							}}
 						>
 							一覧へ戻る
+						</Button>
+					</DialogFooter>
+				</DialogContent>
+			</Dialog>
+
+			<Dialog
+				open={globalError !== null}
+				onOpenChange={(open) => {
+					if (!open) setGlobalError(null);
+				}}
+			>
+				<DialogContent>
+					<DialogHeader>
+						<DialogTitle className="flex items-center gap-2">
+							<AlertTriangle className="h-5 w-5 text-destructive" />
+							登録に失敗しました
+						</DialogTitle>
+						<DialogDescription className="break-words whitespace-pre-wrap text-destructive">
+							{globalError}
+						</DialogDescription>
+					</DialogHeader>
+					<DialogFooter>
+						<Button variant="outline" onClick={() => setGlobalError(null)}>
+							閉じる
 						</Button>
 					</DialogFooter>
 				</DialogContent>
