@@ -9,6 +9,8 @@ import {
 } from "@/libs/storage";
 
 const FIELD_LABELS: Record<string, string> = {
+	storeId: "店舗",
+	status: "状態",
 	date: "日付",
 	payee: "支払先",
 	amount: "金額",
@@ -17,10 +19,18 @@ const FIELD_LABELS: Record<string, string> = {
 	accountCategory: "勘定科目",
 	description: "摘要",
 	invoiceRegistrationNo: "インボイス番号",
-	projectId: "プロジェクト",
-	clientId: "顧客",
-	personInCharge: "担当者",
+	purpose: "目的",
+	participants: "参加者",
 	isAiVerified: "確認済",
+	managerApprovedBy: "店舗管理者承認者",
+	managerApprovedAt: "店舗管理者承認日時",
+	accountantApprovedBy: "経理承認者",
+	accountantApprovedAt: "経理承認日時",
+	presidentApprovedBy: "社長承認者",
+	presidentApprovedAt: "社長承認日時",
+	rejectionReason: "差戻し理由",
+	paidBy: "支払者",
+	paidAt: "支払日",
 	tags: "タグ",
 };
 

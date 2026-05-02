@@ -2,29 +2,18 @@ import { getSupabase } from "./supabase";
 
 // ===== Types =====
 
-export type Project = {
-	id: string;
-	name: string;
-	description: string | null;
-	clientId: string | null;
-	isActive: boolean;
-	createdAt: string;
-};
-
-export type Client = {
-	id: string;
-	name: string;
-	createdAt: string;
-};
-
-export type Staff = {
-	id: string;
-	name: string;
-	createdAt: string;
-};
-
-export type UserRole = "admin" | "editor" | "viewer";
+export type UserRole =
+	| "staff"
+	| "store_manager"
+	| "hq_accountant"
+	| "president";
 export type UserStatus = "pending" | "active";
+
+export type Store = {
+	id: string;
+	name: string;
+	createdAt: string;
+};
 
 export type TksUser = {
 	id: string;
@@ -33,13 +22,24 @@ export type TksUser = {
 	name: string | null;
 	role: UserRole;
 	status: UserStatus;
+	storeId: string | null;
 	inviteCode: string | null;
 	invitedBy: string | null;
 	createdAt: string;
 };
 
+export type ReceiptStatus =
+	| "pending"
+	| "manager_approved"
+	| "accountant_approved"
+	| "approved"
+	| "paid"
+	| "rejected";
+
 export type Receipt = {
 	id: string;
+	storeId: string | null;
+	status: ReceiptStatus;
 	date: string | null;
 	payee: string | null;
 	amount: number | null;
@@ -48,17 +48,35 @@ export type Receipt = {
 	accountCategory: string | null;
 	description: string | null;
 	invoiceRegistrationNo: string | null;
-	projectId: string | null;
-	clientId: string | null;
-	personInCharge: string | null;
+	purpose: string | null;
+	participants: string | null;
 	imageUrl: string;
 	aiRawResponse: Record<string, unknown> | null;
 	aiConfidence: number | null;
 	isAiVerified: boolean;
+	managerApprovedBy: string | null;
+	managerApprovedAt: string | null;
+	accountantApprovedBy: string | null;
+	accountantApprovedAt: string | null;
+	presidentApprovedBy: string | null;
+	presidentApprovedAt: string | null;
+	rejectionReason: string | null;
+	paidBy: string | null;
+	paidAt: string | null;
 	createdBy: string | null;
 	updatedBy: string | null;
 	createdAt: string;
 	updatedAt: string;
+};
+
+export type CashDeposit = {
+	id: string;
+	storeId: string;
+	date: string;
+	amount: number;
+	description: string | null;
+	createdBy: string | null;
+	createdAt: string;
 };
 
 export type Tag = {
@@ -79,6 +97,56 @@ export type AuditLog = {
 	changedAt: string;
 	diff: Record<string, unknown> | null;
 };
+
+// ===== Stores =====
+
+export async function getStores(): Promise<Store[]> {
+	const { data, error } = await getSupabase()
+		.from("tks_stores")
+		.select("*")
+		.order("name", { ascending: true });
+	if (error) console.error("getStores:", error.message);
+	return (data ?? []).map(mapStore);
+}
+
+export async function saveStore(name: string): Promise<Store> {
+	const { data, error } = await getSupabase()
+		.from("tks_stores")
+		.insert({ name })
+		.select()
+		.single();
+	if (error) throw new Error(error.message);
+	return mapStore(data);
+}
+
+export async function updateStore(
+	id: string,
+	input: { name: string },
+): Promise<Store | null> {
+	const { data } = await getSupabase()
+		.from("tks_stores")
+		.update(input)
+		.eq("id", id)
+		.select()
+		.single();
+	return data ? mapStore(data) : null;
+}
+
+export async function deleteStore(id: string): Promise<boolean> {
+	const { error } = await getSupabase()
+		.from("tks_stores")
+		.delete()
+		.eq("id", id);
+	return !error;
+}
+
+function mapStore(s: Record<string, unknown>): Store {
+	return {
+		id: s.id as string,
+		name: s.name as string,
+		createdAt: s.created_at as string,
+	};
+}
 
 // ===== Receipts =====
 
@@ -104,13 +172,28 @@ export async function getReceipt(id: string): Promise<Receipt | null> {
 export async function saveReceipt(
 	input: Omit<
 		Receipt,
-		"id" | "createdAt" | "updatedAt" | "createdBy" | "updatedBy"
+		| "id"
+		| "createdAt"
+		| "updatedAt"
+		| "createdBy"
+		| "updatedBy"
+		| "managerApprovedBy"
+		| "managerApprovedAt"
+		| "accountantApprovedBy"
+		| "accountantApprovedAt"
+		| "presidentApprovedBy"
+		| "presidentApprovedAt"
+		| "rejectionReason"
+		| "paidBy"
+		| "paidAt"
 	>,
 	actorUserId?: string | null,
 ): Promise<Receipt> {
 	const { data, error } = await getSupabase()
 		.from("tks_receipts")
 		.insert({
+			store_id: input.storeId,
+			status: input.status,
 			date: input.date,
 			payee: input.payee,
 			amount: input.amount,
@@ -119,9 +202,8 @@ export async function saveReceipt(
 			account_category: input.accountCategory,
 			description: input.description,
 			invoice_registration_no: input.invoiceRegistrationNo,
-			project_id: input.projectId,
-			client_id: input.clientId,
-			person_in_charge: input.personInCharge,
+			purpose: input.purpose,
+			participants: input.participants,
 			image_url: input.imageUrl,
 			ai_raw_response: input.aiRawResponse,
 			ai_confidence: input.aiConfidence,
@@ -149,6 +231,8 @@ export async function updateReceipt(
 		updated_at: new Date().toISOString(),
 		updated_by: actorUserId ?? null,
 	};
+	if (input.storeId !== undefined) row.store_id = input.storeId;
+	if (input.status !== undefined) row.status = input.status;
 	if (input.date !== undefined) row.date = input.date;
 	if (input.payee !== undefined) row.payee = input.payee;
 	if (input.amount !== undefined) row.amount = input.amount;
@@ -160,11 +244,25 @@ export async function updateReceipt(
 	if (input.description !== undefined) row.description = input.description;
 	if (input.invoiceRegistrationNo !== undefined)
 		row.invoice_registration_no = input.invoiceRegistrationNo;
-	if (input.projectId !== undefined) row.project_id = input.projectId;
-	if (input.clientId !== undefined) row.client_id = input.clientId;
-	if (input.personInCharge !== undefined)
-		row.person_in_charge = input.personInCharge;
+	if (input.purpose !== undefined) row.purpose = input.purpose;
+	if (input.participants !== undefined) row.participants = input.participants;
 	if (input.isAiVerified !== undefined) row.is_ai_verified = input.isAiVerified;
+	if (input.managerApprovedBy !== undefined)
+		row.manager_approved_by = input.managerApprovedBy;
+	if (input.managerApprovedAt !== undefined)
+		row.manager_approved_at = input.managerApprovedAt;
+	if (input.accountantApprovedBy !== undefined)
+		row.accountant_approved_by = input.accountantApprovedBy;
+	if (input.accountantApprovedAt !== undefined)
+		row.accountant_approved_at = input.accountantApprovedAt;
+	if (input.presidentApprovedBy !== undefined)
+		row.president_approved_by = input.presidentApprovedBy;
+	if (input.presidentApprovedAt !== undefined)
+		row.president_approved_at = input.presidentApprovedAt;
+	if (input.rejectionReason !== undefined)
+		row.rejection_reason = input.rejectionReason;
+	if (input.paidBy !== undefined) row.paid_by = input.paidBy;
+	if (input.paidAt !== undefined) row.paid_at = input.paidAt;
 
 	const { data } = await getSupabase()
 		.from("tks_receipts")
@@ -222,6 +320,8 @@ export async function findDuplicateReceipts(params: {
 function mapReceipt(r: Record<string, unknown>): Receipt {
 	return {
 		id: r.id as string,
+		storeId: (r.store_id as string | null) ?? null,
+		status: r.status as ReceiptStatus,
 		date: r.date as string | null,
 		payee: r.payee as string | null,
 		amount: r.amount as number | null,
@@ -230,13 +330,21 @@ function mapReceipt(r: Record<string, unknown>): Receipt {
 		accountCategory: r.account_category as string | null,
 		description: r.description as string | null,
 		invoiceRegistrationNo: r.invoice_registration_no as string | null,
-		projectId: r.project_id as string | null,
-		clientId: r.client_id as string | null,
-		personInCharge: r.person_in_charge as string | null,
+		purpose: r.purpose as string | null,
+		participants: r.participants as string | null,
 		imageUrl: r.image_url as string,
 		aiRawResponse: r.ai_raw_response as Record<string, unknown> | null,
 		aiConfidence: r.ai_confidence as number | null,
 		isAiVerified: r.is_ai_verified as boolean,
+		managerApprovedBy: (r.manager_approved_by as string | null) ?? null,
+		managerApprovedAt: (r.manager_approved_at as string | null) ?? null,
+		accountantApprovedBy: (r.accountant_approved_by as string | null) ?? null,
+		accountantApprovedAt: (r.accountant_approved_at as string | null) ?? null,
+		presidentApprovedBy: (r.president_approved_by as string | null) ?? null,
+		presidentApprovedAt: (r.president_approved_at as string | null) ?? null,
+		rejectionReason: (r.rejection_reason as string | null) ?? null,
+		paidBy: (r.paid_by as string | null) ?? null,
+		paidAt: (r.paid_at as string | null) ?? null,
 		createdBy: (r.created_by as string | null) ?? null,
 		updatedBy: (r.updated_by as string | null) ?? null,
 		createdAt: r.created_at as string,
@@ -245,6 +353,8 @@ function mapReceipt(r: Record<string, unknown>): Receipt {
 }
 
 const AUDITED_RECEIPT_FIELDS: (keyof Receipt)[] = [
+	"storeId",
+	"status",
 	"date",
 	"payee",
 	"amount",
@@ -253,10 +363,18 @@ const AUDITED_RECEIPT_FIELDS: (keyof Receipt)[] = [
 	"accountCategory",
 	"description",
 	"invoiceRegistrationNo",
-	"projectId",
-	"clientId",
-	"personInCharge",
+	"purpose",
+	"participants",
 	"isAiVerified",
+	"managerApprovedBy",
+	"managerApprovedAt",
+	"accountantApprovedBy",
+	"accountantApprovedAt",
+	"presidentApprovedBy",
+	"presidentApprovedAt",
+	"rejectionReason",
+	"paidBy",
+	"paidAt",
 ];
 
 function stripReceiptForAudit(r: Receipt): Record<string, unknown> {
@@ -277,166 +395,6 @@ function buildReceiptDiff(
 		}
 	}
 	return diff;
-}
-
-// ===== Projects =====
-
-export async function getProjects(): Promise<Project[]> {
-	const { data, error } = await getSupabase()
-		.from("tks_projects")
-		.select("*")
-		.order("created_at", { ascending: false });
-	if (error) console.error("getProjects:", error.message);
-	return (data ?? []).map(mapProject);
-}
-
-export async function saveProject(
-	name: string,
-	description: string | null,
-	clientId: string | null = null,
-): Promise<Project> {
-	const { data, error } = await getSupabase()
-		.from("tks_projects")
-		.insert({ name, description, client_id: clientId })
-		.select()
-		.single();
-	if (error) throw new Error(error.message);
-	return mapProject(data);
-}
-
-export async function updateProject(
-	id: string,
-	input: Partial<Omit<Project, "id" | "createdAt">>,
-): Promise<Project | null> {
-	const row: Record<string, unknown> = {};
-	if (input.name !== undefined) row.name = input.name;
-	if (input.description !== undefined) row.description = input.description;
-	if (input.clientId !== undefined) row.client_id = input.clientId;
-	if (input.isActive !== undefined) row.is_active = input.isActive;
-
-	const { data } = await getSupabase()
-		.from("tks_projects")
-		.update(row)
-		.eq("id", id)
-		.select()
-		.single();
-	return data ? mapProject(data) : null;
-}
-
-export async function deleteProject(id: string): Promise<boolean> {
-	const { error } = await getSupabase()
-		.from("tks_projects")
-		.delete()
-		.eq("id", id);
-	return !error;
-}
-
-function mapProject(p: Record<string, unknown>): Project {
-	return {
-		id: p.id as string,
-		name: p.name as string,
-		description: p.description as string | null,
-		clientId: p.client_id as string | null,
-		isActive: p.is_active as boolean,
-		createdAt: p.created_at as string,
-	};
-}
-
-// ===== Clients =====
-
-export async function getClients(): Promise<Client[]> {
-	const { data, error } = await getSupabase()
-		.from("tks_clients")
-		.select("*")
-		.order("created_at", { ascending: false });
-	if (error) console.error("getClients:", error.message);
-	return (data ?? []).map(mapClient);
-}
-
-export async function saveClient(name: string): Promise<Client> {
-	const { data, error } = await getSupabase()
-		.from("tks_clients")
-		.insert({ name })
-		.select()
-		.single();
-	if (error) throw new Error(error.message);
-	return mapClient(data);
-}
-
-export async function updateClient(
-	id: string,
-	input: Partial<Omit<Client, "id" | "createdAt">>,
-): Promise<Client | null> {
-	const { data } = await getSupabase()
-		.from("tks_clients")
-		.update(input)
-		.eq("id", id)
-		.select()
-		.single();
-	return data ? mapClient(data) : null;
-}
-
-export async function deleteClient(id: string): Promise<boolean> {
-	const { error } = await getSupabase()
-		.from("tks_clients")
-		.delete()
-		.eq("id", id);
-	return !error;
-}
-
-function mapClient(c: Record<string, unknown>): Client {
-	return {
-		id: c.id as string,
-		name: c.name as string,
-		createdAt: c.created_at as string,
-	};
-}
-
-// ===== Staff =====
-
-export async function getStaff(): Promise<Staff[]> {
-	const { data, error } = await getSupabase()
-		.from("tks_staff")
-		.select("*")
-		.order("created_at", { ascending: false });
-	if (error) console.error("getStaff:", error.message);
-	return (data ?? []).map(mapStaff);
-}
-
-export async function saveStaff(name: string): Promise<Staff> {
-	const { data, error } = await getSupabase()
-		.from("tks_staff")
-		.insert({ name })
-		.select()
-		.single();
-	if (error) throw new Error(error.message);
-	return mapStaff(data);
-}
-
-export async function updateStaff(
-	id: string,
-	input: Partial<Omit<Staff, "id" | "createdAt">>,
-): Promise<Staff | null> {
-	const { data } = await getSupabase()
-		.from("tks_staff")
-		.update(input)
-		.eq("id", id)
-		.select()
-		.single();
-	return data ? mapStaff(data) : null;
-}
-
-export async function deleteStaff(id: string): Promise<boolean> {
-	const { error } = await getSupabase().from("tks_staff").delete().eq("id", id);
-	return !error;
-}
-
-function mapStaff(s: Record<string, unknown>): Staff {
-	return {
-		id: s.id as string,
-		name: s.name as string,
-		createdAt: s.created_at as string,
-	};
 }
 
 // ===== Users =====
@@ -480,6 +438,7 @@ export async function getUsers(): Promise<TksUser[]> {
 export async function createUser(input: {
 	email: string;
 	role: UserRole;
+	storeId: string | null;
 	inviteCode: string;
 	invitedBy: string | null;
 }): Promise<TksUser> {
@@ -488,6 +447,7 @@ export async function createUser(input: {
 		.insert({
 			email: input.email,
 			role: input.role,
+			store_id: input.storeId,
 			invite_code: input.inviteCode,
 			invited_by: input.invitedBy,
 			status: "pending",
@@ -506,6 +466,7 @@ export async function updateUser(
 		name: string;
 		role: UserRole;
 		status: UserStatus;
+		storeId: string | null;
 	}>,
 ): Promise<TksUser | null> {
 	const row: Record<string, unknown> = {};
@@ -514,6 +475,7 @@ export async function updateUser(
 	if (input.name !== undefined) row.name = input.name;
 	if (input.role !== undefined) row.role = input.role;
 	if (input.status !== undefined) row.status = input.status;
+	if (input.storeId !== undefined) row.store_id = input.storeId;
 
 	const { data } = await getSupabase()
 		.from("tks_users")
@@ -537,6 +499,7 @@ function mapUser(u: Record<string, unknown>): TksUser {
 		name: u.name as string | null,
 		role: u.role as UserRole,
 		status: u.status as UserStatus,
+		storeId: (u.store_id as string | null) ?? null,
 		inviteCode: u.invite_code as string | null,
 		invitedBy: u.invited_by as string | null,
 		createdAt: u.created_at as string,
@@ -701,6 +664,80 @@ function mapAuditLog(l: Record<string, unknown>): AuditLog {
 		changedBy: (l.changed_by as string | null) ?? null,
 		changedAt: l.changed_at as string,
 		diff: (l.diff as Record<string, unknown> | null) ?? null,
+	};
+}
+
+// ===== Cash Deposits (補充金 / 前月繰越金) =====
+
+export async function getCashDeposits(): Promise<CashDeposit[]> {
+	const { data, error } = await getSupabase()
+		.from("tks_cash_deposits")
+		.select("*")
+		.order("date", { ascending: false });
+	if (error) console.error("getCashDeposits:", error.message);
+	return (data ?? []).map(mapCashDeposit);
+}
+
+export async function saveCashDeposit(input: {
+	storeId: string;
+	date: string;
+	amount: number;
+	description: string | null;
+	createdBy: string | null;
+}): Promise<CashDeposit> {
+	const { data, error } = await getSupabase()
+		.from("tks_cash_deposits")
+		.insert({
+			store_id: input.storeId,
+			date: input.date,
+			amount: input.amount,
+			description: input.description,
+			created_by: input.createdBy,
+		})
+		.select()
+		.single();
+	if (error) throw new Error(error.message);
+	return mapCashDeposit(data);
+}
+
+export async function updateCashDeposit(
+	id: string,
+	input: Partial<{
+		date: string;
+		amount: number;
+		description: string | null;
+	}>,
+): Promise<CashDeposit | null> {
+	const row: Record<string, unknown> = {};
+	if (input.date !== undefined) row.date = input.date;
+	if (input.amount !== undefined) row.amount = input.amount;
+	if (input.description !== undefined) row.description = input.description;
+	const { data } = await getSupabase()
+		.from("tks_cash_deposits")
+		.update(row)
+		.eq("id", id)
+		.select()
+		.single();
+	return data ? mapCashDeposit(data) : null;
+}
+
+export async function deleteCashDeposit(id: string): Promise<boolean> {
+	const { error } = await getSupabase()
+		.from("tks_cash_deposits")
+		.delete()
+		.eq("id", id);
+	return !error;
+}
+
+function mapCashDeposit(d: Record<string, unknown>): CashDeposit {
+	return {
+		id: d.id as string,
+		storeId: d.store_id as string,
+		date: d.date as string,
+		amount: d.amount as number,
+		description: (d.description as string | null) ?? null,
+		createdBy: (d.created_by as string | null) ?? null,
+		createdAt: d.created_at as string,
 	};
 }
 

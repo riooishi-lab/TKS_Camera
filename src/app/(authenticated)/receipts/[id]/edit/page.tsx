@@ -19,17 +19,13 @@ import {
 import { ACCOUNT_CATEGORIES } from "@/constants/accountCategories";
 import { PAGE_PATH } from "@/constants/pagePath";
 import { useAuth } from "@/contexts/AuthContext";
-import type { Receipt } from "@/libs/storage";
 import {
-	type Client,
-	getClients,
-	getProjects,
 	getReceipt,
-	getStaff,
+	getStores,
 	getTags,
 	getTagsForReceipt,
-	type Project,
-	type Staff,
+	type Receipt,
+	type Store,
 	setReceiptTags,
 	type Tag,
 	updateReceipt,
@@ -41,27 +37,34 @@ export default function EditReceiptPage() {
 	const router = useRouter();
 	const { tksUser } = useAuth();
 	const [receipt, setReceipt] = useState<Receipt | null>(null);
-	const [projects, setProjects] = useState<Project[]>([]);
-	const [clients, setClients] = useState<Client[]>([]);
-	const [staffList, setStaffList] = useState<Staff[]>([]);
+	const [stores, setStores] = useState<Store[]>([]);
 	const [allTags, setAllTags] = useState<Tag[]>([]);
 	const [selectedTagIds, setSelectedTagIds] = useState<string[]>([]);
 	const [isSaving, setIsSaving] = useState(false);
 
 	useEffect(() => {
+		const myUserId = tksUser?.id ?? null;
+		const myRole = tksUser?.role;
+		const myStoreId = tksUser?.storeId ?? null;
 		getReceipt(params.id).then((r) => {
 			if (!r) {
 				router.replace(PAGE_PATH.receipts);
 				return;
 			}
+			if (myRole === "staff" && r.createdBy !== myUserId) {
+				router.replace(PAGE_PATH.receipts);
+				return;
+			}
+			if (myRole === "store_manager" && r.storeId !== myStoreId) {
+				router.replace(PAGE_PATH.receipts);
+				return;
+			}
 			setReceipt(r);
 		});
-		getProjects().then(setProjects);
-		getClients().then(setClients);
-		getStaff().then(setStaffList);
+		getStores().then(setStores);
 		getTags().then(setAllTags);
 		getTagsForReceipt(params.id).then(setSelectedTagIds);
-	}, [params.id, router]);
+	}, [params.id, router, tksUser?.id, tksUser?.role, tksUser?.storeId]);
 
 	if (!receipt) return null;
 
@@ -85,9 +88,9 @@ export default function EditReceiptPage() {
 				description: (fd.get("description") as string) || null,
 				invoiceRegistrationNo:
 					(fd.get("invoiceRegistrationNo") as string) || null,
-				projectId: (fd.get("projectId") as string) || null,
-				clientId: (fd.get("clientId") as string) || null,
-				personInCharge: (fd.get("personInCharge") as string) || null,
+				storeId: (fd.get("storeId") as string) || null,
+				purpose: (fd.get("purpose") as string) || null,
+				participants: (fd.get("participants") as string) || null,
 				isAiVerified: true,
 			},
 			tksUser?.id ?? null,
@@ -102,6 +105,7 @@ export default function EditReceiptPage() {
 			<div className="mb-6 flex items-center gap-4">
 				<Button
 					render={<Link href={PAGE_PATH.receiptDetail(params.id)} />}
+					nativeButton={false}
 					variant="ghost"
 					size="icon"
 				>
@@ -225,45 +229,35 @@ export default function EditReceiptPage() {
 									defaultValue={receipt.invoiceRegistrationNo ?? ""}
 								/>
 							</div>
-							<div className="grid gap-4 sm:grid-cols-2">
-								<div className="space-y-2">
-									<Label htmlFor="projectId">プロジェクト</Label>
-									<NativeSelect
-										id="projectId"
-										name="projectId"
-										defaultValue={receipt.projectId ?? ""}
-										placeholder="選択"
-										options={projects.map((p) => ({
-											value: p.id,
-											label: p.name,
-										}))}
-									/>
-								</div>
-								<div className="space-y-2">
-									<Label htmlFor="clientId">顧客企業</Label>
-									<NativeSelect
-										id="clientId"
-										name="clientId"
-										defaultValue={receipt.clientId ?? ""}
-										placeholder="選択"
-										options={clients.map((c) => ({
-											value: c.id,
-											label: c.name,
-										}))}
-									/>
-								</div>
-							</div>
 							<div className="space-y-2">
-								<Label htmlFor="personInCharge">担当者</Label>
+								<Label htmlFor="storeId">店舗</Label>
 								<NativeSelect
-									id="personInCharge"
-									name="personInCharge"
-									defaultValue={receipt.personInCharge ?? ""}
+									id="storeId"
+									name="storeId"
+									defaultValue={receipt.storeId ?? ""}
 									placeholder="選択"
-									options={staffList.map((s) => ({
-										value: s.name,
+									options={stores.map((s) => ({
+										value: s.id,
 										label: s.name,
 									}))}
+								/>
+							</div>
+							<div className="space-y-2">
+								<Label htmlFor="purpose">目的</Label>
+								<Input
+									id="purpose"
+									name="purpose"
+									defaultValue={receipt.purpose ?? ""}
+									placeholder="例: 顧客接待・社内会議など"
+								/>
+							</div>
+							<div className="space-y-2">
+								<Label htmlFor="participants">参加者</Label>
+								<Input
+									id="participants"
+									name="participants"
+									defaultValue={receipt.participants ?? ""}
+									placeholder="例: 山田太郎、田中花子"
 								/>
 							</div>
 							<div className="space-y-2">

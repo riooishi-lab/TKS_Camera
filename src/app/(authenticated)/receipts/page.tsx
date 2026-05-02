@@ -17,17 +17,16 @@ import {
 import { PAGE_PATH } from "@/constants/pagePath";
 import { useAuth } from "@/contexts/AuthContext";
 import {
-	type Client,
-	getClients,
-	getProjects,
 	getReceipts,
 	getReceiptTags,
-	getStaff,
+	getStores,
 	getTags,
-	type Project,
+	getUsers,
 	type Receipt,
-	type Staff,
+	type ReceiptStatus,
+	type Store,
 	type Tag,
+	type TksUser,
 } from "@/libs/storage";
 import { downloadCsv, toCsv } from "@/utils/csv";
 import { formatCurrency } from "@/utils/formatCurrency";
@@ -39,9 +38,10 @@ type ColumnKey =
 	| "payee"
 	| "amount"
 	| "accountCategory"
-	| "project"
-	| "client"
-	| "personInCharge"
+	| "store"
+	| "applicant"
+	| "purpose"
+	| "participants"
 	| "description"
 	| "taxAmount"
 	| "tags"
@@ -60,9 +60,10 @@ const ALL_COLUMNS: ColumnDef[] = [
 	{ key: "payee", label: "支払先", defaultVisible: true, alwaysVisible: true },
 	{ key: "amount", label: "金額", defaultVisible: true, align: "right" },
 	{ key: "accountCategory", label: "勘定科目", defaultVisible: true },
-	{ key: "project", label: "PJ", defaultVisible: true },
-	{ key: "client", label: "顧客", defaultVisible: true },
-	{ key: "personInCharge", label: "担当者", defaultVisible: false },
+	{ key: "store", label: "店舗", defaultVisible: true },
+	{ key: "applicant", label: "申請者", defaultVisible: true },
+	{ key: "purpose", label: "目的", defaultVisible: false },
+	{ key: "participants", label: "参加者", defaultVisible: false },
 	{ key: "description", label: "摘要", defaultVisible: false },
 	{ key: "taxAmount", label: "税額", defaultVisible: false, align: "right" },
 	{ key: "tags", label: "タグ", defaultVisible: false },
@@ -70,6 +71,27 @@ const ALL_COLUMNS: ColumnDef[] = [
 ];
 
 const STORAGE_KEY = "receipt-list-columns";
+
+const STATUS_LABELS: Record<ReceiptStatus, string> = {
+	pending: "申請中",
+	manager_approved: "店長承認済",
+	accountant_approved: "経理承認済",
+	approved: "全承認済",
+	rejected: "差戻し",
+	paid: "支払済",
+};
+
+const STATUS_VARIANTS: Record<
+	ReceiptStatus,
+	"default" | "secondary" | "destructive" | "outline"
+> = {
+	pending: "secondary",
+	manager_approved: "secondary",
+	accountant_approved: "secondary",
+	approved: "default",
+	rejected: "destructive",
+	paid: "outline",
+};
 
 function loadVisibleColumns(): Set<ColumnKey> {
 	if (typeof window === "undefined") {
@@ -91,15 +113,15 @@ function loadVisibleColumns(): Set<ColumnKey> {
 function CellValue({
 	col,
 	receipt,
-	projectMap,
-	clientMap,
+	storeMap,
+	userMap,
 	tagMap,
 	receiptTagMap,
 }: {
 	col: ColumnKey;
 	receipt: Receipt;
-	projectMap: Map<string, string>;
-	clientMap: Map<string, string>;
+	storeMap: Map<string, string>;
+	userMap: Map<string, TksUser>;
 	tagMap: Map<string, Tag>;
 	receiptTagMap: Map<string, string[]>;
 }) {
@@ -130,14 +152,17 @@ function CellValue({
 				: "-";
 		case "accountCategory":
 			return receipt.accountCategory ?? "-";
-		case "project":
-			return receipt.projectId
-				? (projectMap.get(receipt.projectId) ?? "-")
-				: "-";
-		case "client":
-			return receipt.clientId ? (clientMap.get(receipt.clientId) ?? "-") : "-";
-		case "personInCharge":
-			return receipt.personInCharge ?? "-";
+		case "store":
+			return receipt.storeId ? (storeMap.get(receipt.storeId) ?? "-") : "-";
+		case "applicant": {
+			if (!receipt.createdBy) return "-";
+			const u = userMap.get(receipt.createdBy);
+			return u?.name ?? u?.email ?? "-";
+		}
+		case "purpose":
+			return receipt.purpose ?? "-";
+		case "participants":
+			return receipt.participants ?? "-";
 		case "description":
 			return receipt.description ?? "-";
 		case "tags": {
@@ -146,10 +171,10 @@ function CellValue({
 			return <TagBadges tags={tags} />;
 		}
 		case "status":
-			return receipt.isAiVerified ? (
-				<Badge variant="default">確認済</Badge>
-			) : (
-				<Badge variant="secondary">未確認</Badge>
+			return (
+				<Badge variant={STATUS_VARIANTS[receipt.status]}>
+					{STATUS_LABELS[receipt.status]}
+				</Badge>
 			);
 	}
 }
@@ -217,8 +242,8 @@ function ColumnSettings({
 
 type FilterState = {
 	month: string;
-	clientId: string;
-	projectId: string;
+	storeId: string;
+	status: string;
 	payeeQuery: string;
 	amountMin: string;
 	amountMax: string;
@@ -229,21 +254,19 @@ function FilterBar({
 	filters,
 	setFilters,
 	months,
-	clients,
-	projects,
+	stores,
 	tags,
 }: {
 	filters: FilterState;
 	setFilters: (updater: (prev: FilterState) => FilterState) => void;
 	months: string[];
-	clients: Client[];
-	projects: Project[];
+	stores: Store[];
 	tags: Tag[];
 }) {
 	const hasFilter =
 		filters.month ||
-		filters.clientId ||
-		filters.projectId ||
+		filters.storeId ||
+		filters.status ||
 		filters.payeeQuery ||
 		filters.amountMin ||
 		filters.amountMax ||
@@ -272,16 +295,29 @@ function FilterBar({
 					}))}
 				/>
 				<FilterSelect
-					value={filters.clientId}
-					onChange={(v) => setFilters((p) => ({ ...p, clientId: v }))}
-					placeholder="全顧客"
-					options={clients.map((c) => ({ value: c.id, label: c.name }))}
+					value={filters.storeId}
+					onChange={(v) => setFilters((p) => ({ ...p, storeId: v }))}
+					placeholder="全店舗"
+					options={stores.map((s) => ({ value: s.id, label: s.name }))}
 				/>
 				<FilterSelect
-					value={filters.projectId}
-					onChange={(v) => setFilters((p) => ({ ...p, projectId: v }))}
-					placeholder="全PJ"
-					options={projects.map((p) => ({ value: p.id, label: p.name }))}
+					value={filters.status}
+					onChange={(v) => setFilters((p) => ({ ...p, status: v }))}
+					placeholder="全状態"
+					options={[
+						{ value: "pending", label: STATUS_LABELS.pending },
+						{
+							value: "manager_approved",
+							label: STATUS_LABELS.manager_approved,
+						},
+						{
+							value: "accountant_approved",
+							label: STATUS_LABELS.accountant_approved,
+						},
+						{ value: "approved", label: STATUS_LABELS.approved },
+						{ value: "rejected", label: STATUS_LABELS.rejected },
+						{ value: "paid", label: STATUS_LABELS.paid },
+					]}
 				/>
 				<Input
 					placeholder="支払先で検索"
@@ -316,8 +352,8 @@ function FilterBar({
 						onClick={() =>
 							setFilters(() => ({
 								month: "",
-								clientId: "",
-								projectId: "",
+								storeId: "",
+								status: "",
 								payeeQuery: "",
 								amountMin: "",
 								amountMax: "",
@@ -364,15 +400,15 @@ function FilterBar({
 function ReceiptTable({
 	receipts,
 	columns,
-	projectMap,
-	clientMap,
+	storeMap,
+	userMap,
 	tagMap,
 	receiptTagMap,
 }: {
 	receipts: Receipt[];
 	columns: ColumnDef[];
-	projectMap: Map<string, string>;
-	clientMap: Map<string, string>;
+	storeMap: Map<string, string>;
+	userMap: Map<string, TksUser>;
 	tagMap: Map<string, Tag>;
 	receiptTagMap: Map<string, string[]>;
 }) {
@@ -406,8 +442,8 @@ function ReceiptTable({
 									<CellValue
 										col={col.key}
 										receipt={receipt}
-										projectMap={projectMap}
-										clientMap={clientMap}
+										storeMap={storeMap}
+										userMap={userMap}
 										tagMap={tagMap}
 										receiptTagMap={receiptTagMap}
 									/>
@@ -459,12 +495,12 @@ function formatYearMonth(ym: string): string {
 
 function exportReceiptsToCsv(params: {
 	receipts: Receipt[];
-	projectMap: Map<string, string>;
-	clientMap: Map<string, string>;
+	storeMap: Map<string, string>;
+	userMap: Map<string, TksUser>;
 	tagMap: Map<string, Tag>;
 	receiptTagMap: Map<string, string[]>;
 }) {
-	const { receipts, projectMap, clientMap, tagMap, receiptTagMap } = params;
+	const { receipts, storeMap, userMap, tagMap, receiptTagMap } = params;
 	const header = [
 		"日付",
 		"支払先",
@@ -474,9 +510,10 @@ function exportReceiptsToCsv(params: {
 		"勘定科目",
 		"摘要",
 		"インボイス登録番号",
-		"プロジェクト",
-		"顧客",
-		"担当者",
+		"目的",
+		"参加者",
+		"店舗",
+		"申請者",
 		"タグ",
 		"状態",
 		"登録日時",
@@ -495,11 +532,16 @@ function exportReceiptsToCsv(params: {
 			r.accountCategory ?? "",
 			r.description ?? "",
 			r.invoiceRegistrationNo ?? "",
-			r.projectId ? (projectMap.get(r.projectId) ?? "") : "",
-			r.clientId ? (clientMap.get(r.clientId) ?? "") : "",
-			r.personInCharge ?? "",
+			r.purpose ?? "",
+			r.participants ?? "",
+			r.storeId ? (storeMap.get(r.storeId) ?? "") : "",
+			r.createdBy
+				? (userMap.get(r.createdBy)?.name ??
+					userMap.get(r.createdBy)?.email ??
+					"")
+				: "",
 			tagNames,
-			r.isAiVerified ? "確認済" : "未確認",
+			STATUS_LABELS[r.status],
 			r.createdAt,
 		];
 	});
@@ -510,11 +552,11 @@ function exportReceiptsToCsv(params: {
 
 export default function ReceiptsPage() {
 	const { tksUser } = useAuth();
-	const canCreate = tksUser?.role === "admin" || tksUser?.role === "editor";
+	const isStaff = tksUser?.role === "staff";
+	const canCreate = isStaff;
 	const [receipts, setReceipts] = useState<Receipt[]>([]);
-	const [projects, setProjects] = useState<Project[]>([]);
-	const [clients, setClients] = useState<Client[]>([]);
-	const [_staffList, setStaffList] = useState<Staff[]>([]);
+	const [stores, setStores] = useState<Store[]>([]);
+	const [users, setUsers] = useState<TksUser[]>([]);
 	const [tags, setTags] = useState<Tag[]>([]);
 	const [receiptTagMap, setReceiptTagMap] = useState<Map<string, string[]>>(
 		new Map(),
@@ -522,8 +564,8 @@ export default function ReceiptsPage() {
 
 	const [filters, setFilters] = useState<FilterState>({
 		month: "",
-		clientId: "",
-		projectId: "",
+		storeId: "",
+		status: "",
 		payeeQuery: "",
 		amountMin: "",
 		amountMax: "",
@@ -535,13 +577,23 @@ export default function ReceiptsPage() {
 	const [showColSettings, setShowColSettings] = useState(false);
 
 	useEffect(() => {
-		getReceipts().then(setReceipts);
-		getProjects().then(setProjects);
-		getClients().then(setClients);
-		getStaff().then(setStaffList);
+		const myUserId = tksUser?.id ?? null;
+		const myRole = tksUser?.role;
+		const myStoreId = tksUser?.storeId ?? null;
+		getReceipts().then((all) => {
+			if (myRole === "staff") {
+				setReceipts(all.filter((r) => r.createdBy === myUserId));
+			} else if (myRole === "store_manager") {
+				setReceipts(all.filter((r) => r.storeId === myStoreId));
+			} else {
+				setReceipts(all);
+			}
+		});
+		getStores().then(setStores);
+		getUsers().then(setUsers);
 		getTags().then(setTags);
 		getReceiptTags().then(setReceiptTagMap);
-	}, []);
+	}, [tksUser?.id, tksUser?.role, tksUser?.storeId]);
 
 	const toggleColumn = (key: ColumnKey) => {
 		setVisibleCols((prev) => {
@@ -566,16 +618,16 @@ export default function ReceiptsPage() {
 		return Array.from(set).sort().reverse();
 	}, [receipts]);
 
-	const projectMap = useMemo(() => {
+	const storeMap = useMemo(() => {
 		const m = new Map<string, string>();
-		for (const p of projects) m.set(p.id, p.name);
+		for (const s of stores) m.set(s.id, s.name);
 		return m;
-	}, [projects]);
-	const clientMap = useMemo(() => {
-		const m = new Map<string, string>();
-		for (const c of clients) m.set(c.id, c.name);
+	}, [stores]);
+	const userMap = useMemo(() => {
+		const m = new Map<string, TksUser>();
+		for (const u of users) m.set(u.id, u);
 		return m;
-	}, [clients]);
+	}, [users]);
 	const tagMap = useMemo(() => {
 		const m = new Map<string, Tag>();
 		for (const t of tags) m.set(t.id, t);
@@ -589,8 +641,8 @@ export default function ReceiptsPage() {
 		return receipts.filter((r) => {
 			if (filters.month && (!r.date || getYearMonth(r.date) !== filters.month))
 				return false;
-			if (filters.projectId && r.projectId !== filters.projectId) return false;
-			if (filters.clientId && r.clientId !== filters.clientId) return false;
+			if (filters.storeId && r.storeId !== filters.storeId) return false;
+			if (filters.status && r.status !== filters.status) return false;
 			if (q && !(r.payee ?? "").toLowerCase().includes(q)) return false;
 			if (min != null && (r.amount ?? 0) < min) return false;
 			if (max != null && (r.amount ?? 0) > max) return false;
@@ -614,8 +666,8 @@ export default function ReceiptsPage() {
 
 	const hasFilter =
 		filters.month ||
-		filters.projectId ||
-		filters.clientId ||
+		filters.storeId ||
+		filters.status ||
 		filters.payeeQuery ||
 		filters.amountMin ||
 		filters.amountMax ||
@@ -632,8 +684,8 @@ export default function ReceiptsPage() {
 						onClick={() =>
 							exportReceiptsToCsv({
 								receipts: filtered,
-								projectMap,
-								clientMap,
+								storeMap,
+								userMap,
 								tagMap,
 								receiptTagMap,
 							})
@@ -653,7 +705,10 @@ export default function ReceiptsPage() {
 						<Settings2 className="h-4 w-4" />
 					</Button>
 					{canCreate && (
-						<Button render={<Link href={PAGE_PATH.receiptNew} />}>
+						<Button
+							render={<Link href={PAGE_PATH.receiptNew} />}
+							nativeButton={false}
+						>
 							<Plus className="mr-2 h-4 w-4" />
 							レシート登録
 						</Button>
@@ -669,8 +724,7 @@ export default function ReceiptsPage() {
 				filters={filters}
 				setFilters={setFilters}
 				months={months}
-				clients={clients}
-				projects={projects}
+				stores={stores}
 				tags={tags}
 			/>
 
@@ -684,8 +738,8 @@ export default function ReceiptsPage() {
 				<ReceiptTable
 					receipts={filtered}
 					columns={activeColumns}
-					projectMap={projectMap}
-					clientMap={clientMap}
+					storeMap={storeMap}
+					userMap={userMap}
 					tagMap={tagMap}
 					receiptTagMap={receiptTagMap}
 				/>
@@ -699,6 +753,7 @@ export default function ReceiptsPage() {
 					{!hasFilter && canCreate && (
 						<Button
 							render={<Link href={PAGE_PATH.receiptNew} />}
+							nativeButton={false}
 							variant="outline"
 							className="mt-4"
 						>
