@@ -14,9 +14,7 @@ export default defineConfig({
 		baseURL: BASE_URL,
 		trace: "on-first-retry",
 	},
-	projects: [
-		{ name: "chromium", use: { ...devices["Desktop Chrome"] } },
-	],
+	projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
 	webServer: {
 		command: `pnpm next dev --turbopack -p ${PORT}`,
 		url: BASE_URL,
