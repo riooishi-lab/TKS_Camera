@@ -27,16 +27,12 @@ import { ACCOUNT_CATEGORIES } from "@/constants/accountCategories";
 import { PAGE_PATH } from "@/constants/pagePath";
 import { useAuth } from "@/contexts/AuthContext";
 import {
-	type Client,
 	fileToBase64,
 	findDuplicateReceipts,
-	getClients,
-	getProjects,
-	getStaff,
+	getStores,
 	getTags,
-	type Project,
 	type Receipt,
-	type Staff,
+	type Store,
 	saveReceipt,
 	setReceiptTags,
 	type Tag,
@@ -80,12 +76,12 @@ type FormValues = {
 	accountCategory: string;
 	description: string;
 	invoiceRegistrationNo: string;
-	projectId: string;
-	clientId: string;
-	personInCharge: string;
+	storeId: string;
+	purpose: string;
+	participants: string;
 };
 
-function emptyForm(personInCharge = ""): FormValues {
+function emptyForm(storeId = ""): FormValues {
 	return {
 		date: "",
 		payee: "",
@@ -95,9 +91,9 @@ function emptyForm(personInCharge = ""): FormValues {
 		accountCategory: "",
 		description: "",
 		invoiceRegistrationNo: "",
-		projectId: "",
-		clientId: "",
-		personInCharge,
+		storeId,
+		purpose: "",
+		participants: "",
 	};
 }
 
@@ -121,15 +117,11 @@ function applyExtraction(
 function ReceiptFormFields({
 	values,
 	onChange,
-	projects,
-	clients,
-	staffList,
+	stores,
 }: {
 	values: FormValues;
 	onChange: (next: FormValues) => void;
-	projects: Project[];
-	clients: Client[];
-	staffList: Staff[];
+	stores: Store[];
 }) {
 	const set = <K extends keyof FormValues>(key: K, v: FormValues[K]) =>
 		onChange({ ...values, [key]: v });
@@ -222,33 +214,29 @@ function ReceiptFormFields({
 					placeholder="T1234567890123"
 				/>
 			</div>
-			<div className="grid gap-4 sm:grid-cols-2">
-				<div className="space-y-2">
-					<Label>プロジェクト</Label>
-					<NativeSelect
-						value={values.projectId}
-						onChange={(e) => set("projectId", e.target.value)}
-						placeholder="選択"
-						options={projects.map((p) => ({ value: p.id, label: p.name }))}
-					/>
-				</div>
-				<div className="space-y-2">
-					<Label>顧客企業</Label>
-					<NativeSelect
-						value={values.clientId}
-						onChange={(e) => set("clientId", e.target.value)}
-						placeholder="選択"
-						options={clients.map((c) => ({ value: c.id, label: c.name }))}
-					/>
-				</div>
+			<div className="space-y-2">
+				<Label>店舗</Label>
+				<NativeSelect
+					value={values.storeId}
+					onChange={(e) => set("storeId", e.target.value)}
+					placeholder="選択"
+					options={stores.map((s) => ({ value: s.id, label: s.name }))}
+				/>
 			</div>
 			<div className="space-y-2">
-				<Label>担当者</Label>
-				<NativeSelect
-					value={values.personInCharge}
-					onChange={(e) => set("personInCharge", e.target.value)}
-					placeholder="選択"
-					options={staffList.map((s) => ({ value: s.name, label: s.name }))}
+				<Label>目的</Label>
+				<Input
+					value={values.purpose}
+					onChange={(e) => set("purpose", e.target.value)}
+					placeholder="例: 顧客接待・社内会議など"
+				/>
+			</div>
+			<div className="space-y-2">
+				<Label>参加者</Label>
+				<Input
+					value={values.participants}
+					onChange={(e) => set("participants", e.target.value)}
+					placeholder="例: 山田太郎、田中花子"
 				/>
 			</div>
 		</div>
@@ -298,9 +286,7 @@ function DuplicateWarning({
 export function NewReceiptFlow() {
 	const { tksUser } = useAuth();
 	const [sheets, setSheets] = useState<ReceiptSheet[]>([]);
-	const [projects, setProjects] = useState<Project[]>([]);
-	const [clients, setClients] = useState<Client[]>([]);
-	const [staffList, setStaffList] = useState<Staff[]>([]);
+	const [stores, setStores] = useState<Store[]>([]);
 	const [allTags, setAllTags] = useState<Tag[]>([]);
 	const [globalError, setGlobalError] = useState<string | null>(null);
 	const [captureError, setCaptureError] = useState<string | null>(null);
@@ -308,13 +294,11 @@ export function NewReceiptFlow() {
 	const [completeDialogOpen, setCompleteDialogOpen] = useState(false);
 
 	useEffect(() => {
-		getProjects().then(setProjects);
-		getClients().then(setClients);
-		getStaff().then(setStaffList);
+		getStores().then(setStores);
 		getTags().then(setAllTags);
 	}, []);
 
-	const defaultPersonInCharge = tksUser?.name ?? "";
+	const defaultStoreId = tksUser?.storeId ?? "";
 
 	const updateSheet = useCallback(
 		(id: string, patch: Partial<ReceiptSheet>) => {
@@ -337,7 +321,7 @@ export function NewReceiptFlow() {
 					status: "pending",
 					extraction: null,
 					aiRawResponse: null,
-					formValues: emptyForm(defaultPersonInCharge),
+					formValues: emptyForm(defaultStoreId),
 					selectedTagIds: [],
 					duplicates: [],
 					dupAcknowledged: false,
@@ -345,7 +329,7 @@ export function NewReceiptFlow() {
 				},
 			]);
 		},
-		[defaultPersonInCharge],
+		[defaultStoreId],
 	);
 
 	const removeFile = useCallback((index: number) => {
@@ -374,7 +358,7 @@ export function NewReceiptFlow() {
 				const data = await res.json();
 				const extraction: ReceiptExtraction = data.extraction;
 				const nextValues = applyExtraction(
-					emptyForm(defaultPersonInCharge),
+					emptyForm(defaultStoreId),
 					extraction,
 				);
 
@@ -403,7 +387,7 @@ export function NewReceiptFlow() {
 				});
 			}
 		},
-		[defaultPersonInCharge, updateSheet],
+		[defaultStoreId, updateSheet],
 	);
 
 	const handleStartAnalysis = useCallback(async () => {
@@ -445,6 +429,10 @@ export function NewReceiptFlow() {
 				const v = s.formValues;
 				const saved = await saveReceipt(
 					{
+						storeId: skipAssignment
+							? null
+							: v.storeId || defaultStoreId || null,
+						status: "pending",
 						date: v.date || null,
 						payee: v.payee || null,
 						amount: v.amount ? Math.round(Number(v.amount)) : null,
@@ -457,9 +445,8 @@ export function NewReceiptFlow() {
 						accountCategory: v.accountCategory || null,
 						description: v.description || null,
 						invoiceRegistrationNo: v.invoiceRegistrationNo || null,
-						projectId: skipAssignment ? null : v.projectId || null,
-						clientId: skipAssignment ? null : v.clientId || null,
-						personInCharge: skipAssignment ? null : v.personInCharge || null,
+						purpose: skipAssignment ? null : v.purpose || null,
+						participants: skipAssignment ? null : v.participants || null,
 						imageUrl: s.imageBase64,
 						aiRawResponse: s.aiRawResponse,
 						aiConfidence: s.extraction?.confidence ?? null,
@@ -581,9 +568,7 @@ export function NewReceiptFlow() {
 							<ReceiptFormFields
 								values={sheet.formValues}
 								onChange={(v) => updateSheet(sheet.id, { formValues: v })}
-								projects={projects}
-								clients={clients}
-								staffList={staffList}
+								stores={stores}
 							/>
 							<div className="space-y-2">
 								<Label>タグ</Label>
@@ -616,7 +601,7 @@ export function NewReceiptFlow() {
 							onClick={() => handleSaveAll(true)}
 							disabled={isSavingAll || !allReady || hasPending}
 						>
-							未割当で登録（プロジェクト・顧客・担当者なし）
+							未割当で登録（店舗・目的・参加者なし）
 						</Button>
 						<p className="text-center text-xs text-muted-foreground">
 							未割当で登録したレシートは、後から編集画面で割り振りできます

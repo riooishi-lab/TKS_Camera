@@ -2,13 +2,12 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { useAuth } from "@/contexts/AuthContext";
 import {
-	type Client,
-	getClients,
-	getProjects,
 	getReceipts,
-	type Project,
+	getStores,
 	type Receipt,
+	type Store,
 } from "@/libs/storage";
 import { formatCurrency } from "@/utils/formatCurrency";
 
@@ -105,23 +104,19 @@ function BarSection({
 }
 
 export default function ReportsPage() {
+	const { tksUser } = useAuth();
 	const [receipts, setReceipts] = useState<Receipt[]>([]);
-	const [projects, setProjects] = useState<Project[]>([]);
-	const [clients, setClients] = useState<Client[]>([]);
+	const [stores, setStores] = useState<Store[]>([]);
 	const [filterYear, setFilterYear] = useState("");
 
 	useEffect(() => {
-		Promise.all([getReceipts(), getProjects(), getClients()]).then(
-			([r, p, c]) => {
-				setReceipts(r);
-				setProjects(p);
-				setClients(c);
-			},
-		);
+		Promise.all([getReceipts(), getStores()]).then(([r, s]) => {
+			setReceipts(r);
+			setStores(s);
+		});
 	}, []);
 
-	const projectMap = useMemo(() => createIdNameMap(projects), [projects]);
-	const clientMap = useMemo(() => createIdNameMap(clients), [clients]);
+	const storeMap = useMemo(() => createIdNameMap(stores), [stores]);
 
 	const years = useMemo(() => {
 		const set = new Set(
@@ -152,20 +147,12 @@ export default function ReportsPage() {
 		return rows.sort((a, b) => a.label.localeCompare(b.label));
 	}, [filtered]);
 
-	const projectRows = useMemo(
+	const storeRows = useMemo(
 		() =>
 			aggregateByKey(filtered, (r) =>
-				r.projectId ? (projectMap.get(r.projectId) ?? "不明") : null,
+				r.storeId ? (storeMap.get(r.storeId) ?? "不明") : null,
 			),
-		[filtered, projectMap],
-	);
-
-	const clientRows = useMemo(
-		() =>
-			aggregateByKey(filtered, (r) =>
-				r.clientId ? (clientMap.get(r.clientId) ?? "不明") : null,
-			),
-		[filtered, clientMap],
+		[filtered, storeMap],
 	);
 
 	const categoryRows = useMemo(
@@ -177,12 +164,20 @@ export default function ReportsPage() {
 		() =>
 			Math.max(
 				0,
-				...[monthlyRows, projectRows, clientRows, categoryRows].flatMap(
-					(rows) => rows.map((r) => r.amount),
+				...[monthlyRows, storeRows, categoryRows].flatMap((rows) =>
+					rows.map((r) => r.amount),
 				),
 			),
-		[monthlyRows, projectRows, clientRows, categoryRows],
+		[monthlyRows, storeRows, categoryRows],
 	);
+
+	if (tksUser?.role === "staff") {
+		return (
+			<div className="py-12 text-center text-muted-foreground">
+				このページにはアクセスできません
+			</div>
+		);
+	}
 
 	return (
 		<div>
@@ -212,12 +207,7 @@ export default function ReportsPage() {
 			{/* 各セクション */}
 			<div className="mt-6 space-y-6">
 				<BarSection title="月別推移" rows={monthlyRows} maxAmount={globalMax} />
-				<BarSection
-					title="プロジェクト別"
-					rows={projectRows}
-					maxAmount={globalMax}
-				/>
-				<BarSection title="顧客別" rows={clientRows} maxAmount={globalMax} />
+				<BarSection title="店舗別" rows={storeRows} maxAmount={globalMax} />
 				<BarSection
 					title="勘定科目別"
 					rows={categoryRows}

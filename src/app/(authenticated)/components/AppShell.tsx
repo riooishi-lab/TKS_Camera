@@ -2,15 +2,13 @@
 
 import {
 	BarChart3,
-	Building2,
-	FolderOpen,
+	BookOpen,
 	LogOut,
 	Menu,
 	PanelLeftClose,
 	PanelLeftOpen,
 	Receipt,
 	Settings,
-	Users,
 	UsersRound,
 } from "lucide-react";
 import Link from "next/link";
@@ -38,36 +36,29 @@ type NavItem = {
 
 const allNavItems: NavItem[] = [
 	{ href: PAGE_PATH.receipts, label: "レシート", icon: Receipt },
-	{ href: PAGE_PATH.reports, label: "レポート", icon: BarChart3 },
 	{
-		href: PAGE_PATH.projects,
-		label: "プロジェクト",
-		icon: FolderOpen,
-		roles: ["admin", "editor"],
+		href: PAGE_PATH.cashBook,
+		label: "小口現金帳",
+		icon: BookOpen,
+		roles: ["store_manager", "hq_accountant", "president"],
 	},
 	{
-		href: PAGE_PATH.clients,
-		label: "顧客企業",
-		icon: Building2,
-		roles: ["admin", "editor"],
-	},
-	{
-		href: PAGE_PATH.staff,
-		label: "担当者",
-		icon: Users,
-		roles: ["admin", "editor"],
+		href: PAGE_PATH.reports,
+		label: "レポート",
+		icon: BarChart3,
+		roles: ["store_manager", "hq_accountant", "president"],
 	},
 	{
 		href: PAGE_PATH.users,
 		label: "ユーザー管理",
 		icon: UsersRound,
-		roles: ["admin"],
+		roles: ["hq_accountant"],
 	},
 	{
 		href: PAGE_PATH.settings,
 		label: "設定",
 		icon: Settings,
-		roles: ["admin", "editor"],
+		roles: ["hq_accountant"],
 	},
 ];
 
@@ -78,7 +69,7 @@ function isActiveLink(pathname: string, href: string): boolean {
 export function AppShell({ children }: { children: React.ReactNode }) {
 	const pathname = usePathname();
 	const { tksUser, logout } = useAuth();
-	const role = tksUser?.role ?? "viewer";
+	const role: UserRole = tksUser?.role ?? "staff";
 
 	const navItems = allNavItems.filter(
 		(item) => !item.roles || item.roles.includes(role),

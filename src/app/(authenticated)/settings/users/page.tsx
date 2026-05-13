@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { NativeSelect } from "@/components/ui/native-select";
 import {
 	Table,
 	TableBody,
@@ -27,40 +28,51 @@ import { useAuth } from "@/contexts/AuthContext";
 import {
 	createUser,
 	deleteUser,
+	getStores,
 	getUsers,
+	type Store,
 	type TksUser,
 	type UserRole,
 	updateUser,
 } from "@/libs/storage";
 
 const ROLE_LABELS: Record<UserRole, string> = {
-	admin: "管理者",
-	editor: "登録者",
-	viewer: "閲覧者",
+	staff: "スタッフ",
+	store_manager: "店舗管理者",
+	hq_accountant: "本社経理",
+	president: "社長",
 };
 
 export default function UsersPage() {
 	const { tksUser } = useAuth();
 	const [users, setUsers] = useState<TksUser[]>([]);
+	const [stores, setStores] = useState<Store[]>([]);
 	const [open, setOpen] = useState(false);
 	const [email, setEmail] = useState("");
-	const [role, setRole] = useState<UserRole>("editor");
+	const [role, setRole] = useState<UserRole>("staff");
+	const [storeId, setStoreId] = useState("");
 	const [error, setError] = useState("");
 	const [inviteLink, setInviteLink] = useState("");
 	const [copied, setCopied] = useState(false);
 
-	const load = useCallback(() => getUsers().then(setUsers), []);
+	const load = useCallback(() => {
+		getUsers().then(setUsers);
+		getStores().then(setStores);
+	}, []);
 	useEffect(() => {
 		load();
 	}, [load]);
 
-	if (tksUser?.role !== "admin") {
+	if (tksUser?.role !== "hq_accountant") {
 		return (
 			<div className="py-12 text-center text-muted-foreground">
-				管理者のみアクセスできます
+				本社経理のみアクセスできます
 			</div>
 		);
 	}
+
+	const storeName = (id: string | null) =>
+		id ? (stores.find((s) => s.id === id)?.name ?? "-") : "-";
 
 	const handleInvite = async (e: React.FormEvent) => {
 		e.preventDefault();
@@ -72,12 +84,14 @@ export default function UsersPage() {
 			await createUser({
 				email,
 				role,
+				storeId: storeId || null,
 				inviteCode,
 				invitedBy: tksUser.id,
 			});
 			const base = window.location.origin;
 			setInviteLink(`${base}/register?code=${inviteCode}`);
 			setEmail("");
+			setStoreId("");
 			load();
 		} catch (err) {
 			const msg = err instanceof Error ? err.message : "エラーが発生しました";
@@ -105,6 +119,15 @@ export default function UsersPage() {
 			load();
 		} catch {
 			setError("権限の変更に失敗しました");
+		}
+	};
+
+	const handleStoreChange = async (id: string, newStoreId: string) => {
+		try {
+			await updateUser(id, { storeId: newStoreId || null });
+			load();
+		} catch {
+			setError("店舗の変更に失敗しました");
 		}
 	};
 
@@ -158,10 +181,25 @@ export default function UsersPage() {
 									onChange={(e) => setRole(e.target.value as UserRole)}
 									className="flex h-8 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none focus-visible:border-ring"
 								>
-									<option value="admin">管理者</option>
-									<option value="editor">登録者</option>
-									<option value="viewer">閲覧者</option>
+									<option value="staff">{ROLE_LABELS.staff}</option>
+									<option value="store_manager">
+										{ROLE_LABELS.store_manager}
+									</option>
+									<option value="hq_accountant">
+										{ROLE_LABELS.hq_accountant}
+									</option>
+									<option value="president">{ROLE_LABELS.president}</option>
 								</select>
+							</div>
+							<div className="space-y-2">
+								<Label htmlFor="inviteStore">店舗（任意）</Label>
+								<NativeSelect
+									id="inviteStore"
+									value={storeId}
+									onChange={(e) => setStoreId(e.target.value)}
+									placeholder="選択"
+									options={stores.map((s) => ({ value: s.id, label: s.name }))}
+								/>
 							</div>
 							{error && <p className="text-sm text-destructive">{error}</p>}
 							<Button type="submit" className="w-full">
@@ -197,6 +235,7 @@ export default function UsersPage() {
 							<TableHead>名前</TableHead>
 							<TableHead>メール</TableHead>
 							<TableHead>権限</TableHead>
+							<TableHead>店舗</TableHead>
 							<TableHead>状態</TableHead>
 							<TableHead />
 						</TableRow>
@@ -217,9 +256,32 @@ export default function UsersPage() {
 											}
 											className="h-7 rounded border border-input bg-transparent px-1.5 text-xs outline-none"
 										>
-											<option value="admin">管理者</option>
-											<option value="editor">登録者</option>
-											<option value="viewer">閲覧者</option>
+											<option value="staff">{ROLE_LABELS.staff}</option>
+											<option value="store_manager">
+												{ROLE_LABELS.store_manager}
+											</option>
+											<option value="hq_accountant">
+												{ROLE_LABELS.hq_accountant}
+											</option>
+											<option value="president">{ROLE_LABELS.president}</option>
+										</select>
+									)}
+								</TableCell>
+								<TableCell>
+									{u.id === tksUser.id ? (
+										storeName(u.storeId)
+									) : (
+										<select
+											value={u.storeId ?? ""}
+											onChange={(e) => handleStoreChange(u.id, e.target.value)}
+											className="h-7 rounded border border-input bg-transparent px-1.5 text-xs outline-none"
+										>
+											<option value="">未割当</option>
+											{stores.map((s) => (
+												<option key={s.id} value={s.id}>
+													{s.name}
+												</option>
+											))}
 										</select>
 									)}
 								</TableCell>

@@ -10,6 +10,7 @@ export default function NewReceiptPage() {
 			<div className="mb-6 flex items-center gap-4">
 				<Button
 					render={<Link href={PAGE_PATH.receipts} />}
+					nativeButton={false}
 					variant="ghost"
 					size="icon"
 				>

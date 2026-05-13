@@ -1,9 +1,22 @@
-import { ChevronRight, Tag, Users } from "lucide-react";
+"use client";
+
+import { ChevronRight, Store, Tag, Users } from "lucide-react";
 import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { PAGE_PATH } from "@/constants/pagePath";
+import { useAuth } from "@/contexts/AuthContext";
 
 export default function SettingsPage() {
+	const { tksUser } = useAuth();
+
+	if (tksUser?.role === "staff") {
+		return (
+			<div className="py-12 text-center text-muted-foreground">
+				このページにはアクセスできません
+			</div>
+		);
+	}
+
 	return (
 		<div className="mx-auto max-w-2xl space-y-6">
 			<h1 className="text-2xl font-bold">設定</h1>
@@ -14,6 +27,11 @@ export default function SettingsPage() {
 							href={PAGE_PATH.users}
 							icon={<Users className="h-4 w-4" />}
 							label="ユーザー管理"
+						/>
+						<SettingsLink
+							href={PAGE_PATH.stores}
+							icon={<Store className="h-4 w-4" />}
+							label="店舗管理"
 						/>
 						<SettingsLink
 							href={PAGE_PATH.tags}

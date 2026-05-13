@@ -100,7 +100,8 @@ function TagForm({
 
 export default function TagsPage() {
 	const { tksUser } = useAuth();
-	const canEdit = tksUser?.role === "admin" || tksUser?.role === "editor";
+	const canEdit =
+		tksUser?.role === "hq_accountant" || tksUser?.role === "store_manager";
 	const [tags, setTags] = useState<Tag[]>([]);
 	const [createOpen, setCreateOpen] = useState(false);
 	const [editTarget, setEditTarget] = useState<Tag | null>(null);
@@ -112,11 +113,20 @@ export default function TagsPage() {
 		refresh();
 	}, [refresh]);
 
+	if (tksUser?.role === "staff") {
+		return (
+			<div className="py-12 text-center text-muted-foreground">
+				このページにはアクセスできません
+			</div>
+		);
+	}
+
 	return (
 		<div className="mx-auto max-w-2xl space-y-6">
 			<div className="flex items-center gap-3">
 				<Button
 					render={<Link href={PAGE_PATH.settings} />}
+					nativeButton={false}
 					variant="ghost"
 					size="icon"
 				>
