@@ -1,6 +1,15 @@
 "use client";
 
-import { ArrowLeft, Banknote, Check, Pencil, Trash2, X } from "lucide-react";
+import {
+	ArrowLeft,
+	Banknote,
+	Check,
+	Pencil,
+	RotateCcw,
+	Trash2,
+	Undo2,
+	X,
+} from "lucide-react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -21,6 +30,7 @@ import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { PAGE_PATH } from "@/constants/pagePath";
 import { useAuth } from "@/contexts/AuthContext";
+import { buildApprovalPatch, notifyReceiptEvent } from "@/libs/notifications";
 import {
 	deleteReceipt,
 	getReceipt,
@@ -28,6 +38,7 @@ import {
 	getTags,
 	getTagsForReceipt,
 	getUsers,
+	isReceiptEditable,
 	type Receipt,
 	type ReceiptStatus,
 	type Store,
@@ -61,6 +72,10 @@ const STATUS_VARIANTS: Record<
 	paid: "outline",
 };
 
+// 楽観ロック不一致（取得後に他者が状態変更）時のメッセージ
+const STALE_MESSAGE =
+	"レシートの状態が変更されています。ページを再読み込みしてください。";
+
 export default function ReceiptDetailPage() {
 	const params = useParams<{ id: string }>();
 	const router = useRouter();
@@ -72,11 +87,19 @@ export default function ReceiptDetailPage() {
 	const [tagIds, setTagIds] = useState<string[]>([]);
 	const [rejectOpen, setRejectOpen] = useState(false);
 	const [rejectionReason, setRejectionReason] = useState("");
+	const [revertOpen, setRevertOpen] = useState(false);
 	const [actionError, setActionError] = useState<string | null>(null);
 
 	const role = tksUser?.role;
 	const isHqAccountant = role === "hq_accountant";
-	const canEdit = !!tksUser;
+	// 承認後（manager_approved 以降）は改ざん防止のため編集不可
+	const canEdit =
+		!!tksUser && receipt != null && isReceiptEditable(receipt.status);
+	// 差戻し（rejected）されたレシートを申請者本人が再申請できる
+	const canResubmit =
+		receipt?.status === "rejected" &&
+		receipt.createdBy != null &&
+		receipt.createdBy === tksUser?.id;
 
 	// 各ロールが現在のステータスで実行できるアクション
 	const canManagerApprove =
@@ -92,6 +115,22 @@ export default function ReceiptDetailPage() {
 	// 支払いは経理が approved 状態で実行
 	const canMarkPaid =
 		role === "hq_accountant" && receipt?.status === "approved";
+
+	// 承認・支払の取り消し（巻き戻し）: 各ステージを実行したロールが1段階前に戻せる
+	const canRevertManager =
+		role === "store_manager" && receipt?.status === "manager_approved";
+	const canRevertAccountant =
+		role === "hq_accountant" && receipt?.status === "accountant_approved";
+	const canRevertPresident =
+		role === "president" && receipt?.status === "approved";
+	const canRevertPayment =
+		role === "hq_accountant" && receipt?.status === "paid";
+	const canRevert =
+		canRevertManager ||
+		canRevertAccountant ||
+		canRevertPresident ||
+		canRevertPayment;
+	const revertLabel = canRevertPayment ? "支払を取り消す" : "承認を取り消す";
 
 	useEffect(() => {
 		const myUserId = tksUser?.id ?? null;
@@ -154,33 +193,28 @@ export default function ReceiptDetailPage() {
 
 	const handleApprove = async () => {
 		setActionError(null);
-		const now = new Date().toISOString();
+		// canApprove で「ロール×現在ステータス」が承認可能であることを担保済み
+		if (!canApprove) return;
 		const actor = tksUser?.id ?? null;
+		const transition = buildApprovalPatch(
+			role,
+			actor,
+			new Date().toISOString(),
+		);
+		if (!transition) return;
 		try {
-			let patch: Partial<Receipt> = {};
-			if (canManagerApprove) {
-				patch = {
-					status: "manager_approved",
-					managerApprovedBy: actor,
-					managerApprovedAt: now,
-				};
-			} else if (canAccountantApprove) {
-				patch = {
-					status: "accountant_approved",
-					accountantApprovedBy: actor,
-					accountantApprovedAt: now,
-				};
-			} else if (canPresidentApprove) {
-				patch = {
-					status: "approved",
-					presidentApprovedBy: actor,
-					presidentApprovedAt: now,
-				};
+			const updated = await updateReceipt(
+				receipt.id,
+				transition.patch,
+				actor,
+				receipt.status,
+			);
+			if (updated) {
+				setReceipt(updated);
+				void notifyReceiptEvent({ receipt: updated, event: transition.event });
 			} else {
-				return;
+				setActionError(STALE_MESSAGE);
 			}
-			const updated = await updateReceipt(receipt.id, patch, actor);
-			if (updated) setReceipt(updated);
 		} catch (err) {
 			setActionError(err instanceof Error ? err.message : "承認に失敗しました");
 		}
@@ -201,10 +235,16 @@ export default function ReceiptDetailPage() {
 					rejectionReason: rejectionReason.trim(),
 				},
 				actor,
+				receipt.status,
 			);
-			if (updated) setReceipt(updated);
-			setRejectOpen(false);
-			setRejectionReason("");
+			if (updated) {
+				setReceipt(updated);
+				void notifyReceiptEvent({ receipt: updated, event: "rejected" });
+				setRejectOpen(false);
+				setRejectionReason("");
+			} else {
+				setActionError(STALE_MESSAGE);
+			}
 		} catch (err) {
 			setActionError(
 				err instanceof Error ? err.message : "差戻しに失敗しました",
@@ -221,11 +261,102 @@ export default function ReceiptDetailPage() {
 				receipt.id,
 				{ status: "paid", paidBy: actor, paidAt: now },
 				actor,
+				receipt.status,
 			);
-			if (updated) setReceipt(updated);
+			if (updated) {
+				setReceipt(updated);
+				void notifyReceiptEvent({ receipt: updated, event: "paid" });
+			} else {
+				setActionError(STALE_MESSAGE);
+			}
 		} catch (err) {
 			setActionError(
 				err instanceof Error ? err.message : "支払い記録に失敗しました",
+			);
+		}
+	};
+
+	const handleRevert = async () => {
+		setActionError(null);
+		const actor = tksUser?.id ?? null;
+		try {
+			// 現在のステータスに応じて1段階前に巻き戻し、当該ステージの承認情報をクリアする
+			let patch: Partial<Receipt>;
+			if (canRevertManager) {
+				patch = {
+					status: "pending",
+					managerApprovedBy: null,
+					managerApprovedAt: null,
+				};
+			} else if (canRevertAccountant) {
+				patch = {
+					status: "manager_approved",
+					accountantApprovedBy: null,
+					accountantApprovedAt: null,
+				};
+			} else if (canRevertPresident) {
+				patch = {
+					status: "accountant_approved",
+					presidentApprovedBy: null,
+					presidentApprovedAt: null,
+				};
+			} else if (canRevertPayment) {
+				patch = {
+					status: "approved",
+					paidBy: null,
+					paidAt: null,
+				};
+			} else {
+				return;
+			}
+			const updated = await updateReceipt(
+				receipt.id,
+				patch,
+				actor,
+				receipt.status,
+			);
+			if (updated) {
+				setReceipt(updated);
+				setRevertOpen(false);
+			} else {
+				setActionError(STALE_MESSAGE);
+			}
+		} catch (err) {
+			setActionError(
+				err instanceof Error ? err.message : "取り消しに失敗しました",
+			);
+		}
+	};
+
+	const handleResubmit = async () => {
+		setActionError(null);
+		const actor = tksUser?.id ?? null;
+		try {
+			// 申請中に戻し、これまでの承認・差戻し情報をクリアして承認フローを最初からやり直す
+			const updated = await updateReceipt(
+				receipt.id,
+				{
+					status: "pending",
+					rejectionReason: null,
+					managerApprovedBy: null,
+					managerApprovedAt: null,
+					accountantApprovedBy: null,
+					accountantApprovedAt: null,
+					presidentApprovedBy: null,
+					presidentApprovedAt: null,
+				},
+				actor,
+				receipt.status,
+			);
+			if (updated) {
+				setReceipt(updated);
+				void notifyReceiptEvent({ receipt: updated, event: "resubmitted" });
+			} else {
+				setActionError(STALE_MESSAGE);
+			}
+		} catch (err) {
+			setActionError(
+				err instanceof Error ? err.message : "再申請に失敗しました",
 			);
 		}
 	};
@@ -279,6 +410,27 @@ export default function ReceiptDetailPage() {
 						>
 							<Banknote className="mr-1.5 h-4 w-4" />
 							支払済にする
+						</Button>
+					)}
+					{canRevert && (
+						<Button
+							variant="outline"
+							size="sm"
+							onClick={() => setRevertOpen(true)}
+						>
+							<Undo2 className="mr-1.5 h-4 w-4" />
+							{revertLabel}
+						</Button>
+					)}
+					{canResubmit && (
+						<Button
+							variant="default"
+							size="sm"
+							onClick={handleResubmit}
+							className="bg-green-600 hover:bg-green-700"
+						>
+							<RotateCcw className="mr-1.5 h-4 w-4" />
+							再申請
 						</Button>
 					)}
 					{canEdit && (
@@ -469,6 +621,35 @@ export default function ReceiptDetailPage() {
 						</Button>
 						<Button variant="destructive" onClick={handleReject}>
 							差戻す
+						</Button>
+					</DialogFooter>
+				</DialogContent>
+			</Dialog>
+
+			{/* 承認・支払 取り消し確認ダイアログ */}
+			<Dialog
+				open={revertOpen}
+				onOpenChange={(v) => {
+					setRevertOpen(v);
+					if (!v) setActionError(null);
+				}}
+			>
+				<DialogContent>
+					<DialogHeader>
+						<DialogTitle>{revertLabel}か？</DialogTitle>
+						<DialogDescription>
+							ステータスが1段階前に戻ります。この操作は編集履歴に記録されます。
+						</DialogDescription>
+					</DialogHeader>
+					{actionError && (
+						<p className="text-sm text-destructive">{actionError}</p>
+					)}
+					<DialogFooter>
+						<Button variant="outline" onClick={() => setRevertOpen(false)}>
+							キャンセル
+						</Button>
+						<Button variant="destructive" onClick={handleRevert}>
+							{revertLabel}
 						</Button>
 					</DialogFooter>
 				</DialogContent>

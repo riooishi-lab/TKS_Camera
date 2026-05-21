@@ -1,8 +1,8 @@
 "use client";
 
-import { Download, Plus, Settings2 } from "lucide-react";
+import { Check, Download, Plus, Settings2 } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/table";
 import { PAGE_PATH } from "@/constants/pagePath";
 import { useAuth } from "@/contexts/AuthContext";
+import { buildApprovalPatch, notifyReceiptEvent } from "@/libs/notifications";
 import {
 	getReceipts,
 	getReceiptTags,
@@ -27,6 +28,8 @@ import {
 	type Store,
 	type Tag,
 	type TksUser,
+	type UserRole,
+	updateReceipt,
 } from "@/libs/storage";
 import { downloadCsv, toCsv } from "@/utils/csv";
 import { formatCurrency } from "@/utils/formatCurrency";
@@ -45,6 +48,7 @@ type ColumnKey =
 	| "description"
 	| "taxAmount"
 	| "tags"
+	| "aiVerified"
 	| "status";
 
 type ColumnDef = {
@@ -67,6 +71,7 @@ const ALL_COLUMNS: ColumnDef[] = [
 	{ key: "description", label: "摘要", defaultVisible: false },
 	{ key: "taxAmount", label: "税額", defaultVisible: false, align: "right" },
 	{ key: "tags", label: "タグ", defaultVisible: false },
+	{ key: "aiVerified", label: "AI検証", defaultVisible: false },
 	{ key: "status", label: "状態", defaultVisible: true },
 ];
 
@@ -170,6 +175,12 @@ function CellValue({
 			const tags = ids.map((id) => tagMap.get(id)).filter((t): t is Tag => !!t);
 			return <TagBadges tags={tags} />;
 		}
+		case "aiVerified":
+			return receipt.isAiVerified ? (
+				<span className="text-muted-foreground">検証済</span>
+			) : (
+				<Badge variant="outline">未検証</Badge>
+			);
 		case "status":
 			return (
 				<Badge variant={STATUS_VARIANTS[receipt.status]}>
@@ -244,6 +255,7 @@ type FilterState = {
 	month: string;
 	storeId: string;
 	status: string;
+	aiVerified: string;
 	payeeQuery: string;
 	amountMin: string;
 	amountMax: string;
@@ -267,6 +279,7 @@ function FilterBar({
 		filters.month ||
 		filters.storeId ||
 		filters.status ||
+		filters.aiVerified ||
 		filters.payeeQuery ||
 		filters.amountMin ||
 		filters.amountMax ||
@@ -319,6 +332,15 @@ function FilterBar({
 						{ value: "paid", label: STATUS_LABELS.paid },
 					]}
 				/>
+				<FilterSelect
+					value={filters.aiVerified}
+					onChange={(v) => setFilters((p) => ({ ...p, aiVerified: v }))}
+					placeholder="全AI状態"
+					options={[
+						{ value: "unverified", label: "AI未検証" },
+						{ value: "verified", label: "検証済み" },
+					]}
+				/>
 				<Input
 					placeholder="支払先で検索"
 					value={filters.payeeQuery}
@@ -354,6 +376,7 @@ function FilterBar({
 								month: "",
 								storeId: "",
 								status: "",
+								aiVerified: "",
 								payeeQuery: "",
 								amountMin: "",
 								amountMax: "",
@@ -397,6 +420,13 @@ function FilterBar({
 	);
 }
 
+type TableSelection = {
+	approvableIds: Set<string>;
+	selectedIds: Set<string>;
+	onToggle: (id: string) => void;
+	onToggleAll: () => void;
+};
+
 function ReceiptTable({
 	receipts,
 	columns,
@@ -404,6 +434,7 @@ function ReceiptTable({
 	userMap,
 	tagMap,
 	receiptTagMap,
+	selection,
 }: {
 	receipts: Receipt[];
 	columns: ColumnDef[];
@@ -411,12 +442,30 @@ function ReceiptTable({
 	userMap: Map<string, TksUser>;
 	tagMap: Map<string, Tag>;
 	receiptTagMap: Map<string, string[]>;
+	selection?: TableSelection;
 }) {
+	const allApprovableSelected =
+		selection != null &&
+		selection.approvableIds.size > 0 &&
+		[...selection.approvableIds].every((id) => selection.selectedIds.has(id));
+
 	return (
 		<div className="mt-4 overflow-x-auto rounded-md border">
 			<Table>
 				<TableHeader>
 					<TableRow>
+						{selection && (
+							<TableHead className="w-10">
+								<input
+									type="checkbox"
+									aria-label="承認対象をすべて選択"
+									className="size-4 align-middle"
+									checked={allApprovableSelected}
+									disabled={selection.approvableIds.size === 0}
+									onChange={selection.onToggleAll}
+								/>
+							</TableHead>
+						)}
 						{columns.map((col) => (
 							<TableHead
 								key={col.key}
@@ -432,6 +481,19 @@ function ReceiptTable({
 				<TableBody>
 					{receipts.map((receipt) => (
 						<TableRow key={receipt.id}>
+							{selection && (
+								<TableCell className="w-10">
+									{selection.approvableIds.has(receipt.id) && (
+										<input
+											type="checkbox"
+											aria-label="このレシートを選択"
+											className="size-4 align-middle"
+											checked={selection.selectedIds.has(receipt.id)}
+											onChange={() => selection.onToggle(receipt.id)}
+										/>
+									)}
+								</TableCell>
+							)}
 							{columns.map((col) => (
 								<TableCell
 									key={col.key}
@@ -493,6 +555,23 @@ function formatYearMonth(ym: string): string {
 	return `${y}年${Number(m)}月`;
 }
 
+// ロールが一括承認できる対象レシートのステータス。
+// 各承認者は自分のステージにあるレシートのみ承認できる。
+function approvableStatusForRole(
+	role: UserRole | undefined,
+): ReceiptStatus | null {
+	switch (role) {
+		case "store_manager":
+			return "pending";
+		case "hq_accountant":
+			return "manager_approved";
+		case "president":
+			return "accountant_approved";
+		default:
+			return null;
+	}
+}
+
 function exportReceiptsToCsv(params: {
 	receipts: Receipt[];
 	storeMap: Map<string, string>;
@@ -515,6 +594,7 @@ function exportReceiptsToCsv(params: {
 		"店舗",
 		"申請者",
 		"タグ",
+		"AI検証",
 		"状態",
 		"登録日時",
 	];
@@ -541,6 +621,7 @@ function exportReceiptsToCsv(params: {
 					"")
 				: "",
 			tagNames,
+			r.isAiVerified ? "検証済" : "未検証",
 			STATUS_LABELS[r.status],
 			r.createdAt,
 		];
@@ -566,6 +647,7 @@ export default function ReceiptsPage() {
 		month: "",
 		storeId: "",
 		status: "",
+		aiVerified: "",
 		payeeQuery: "",
 		amountMin: "",
 		amountMax: "",
@@ -576,24 +658,30 @@ export default function ReceiptsPage() {
 		useState<Set<ColumnKey>>(loadVisibleColumns);
 	const [showColSettings, setShowColSettings] = useState(false);
 
-	useEffect(() => {
+	const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+	const [bulkApproving, setBulkApproving] = useState(false);
+
+	const loadReceipts = useCallback(async () => {
 		const myUserId = tksUser?.id ?? null;
 		const myRole = tksUser?.role;
 		const myStoreId = tksUser?.storeId ?? null;
-		getReceipts().then((all) => {
-			if (myRole === "staff") {
-				setReceipts(all.filter((r) => r.createdBy === myUserId));
-			} else if (myRole === "store_manager") {
-				setReceipts(all.filter((r) => r.storeId === myStoreId));
-			} else {
-				setReceipts(all);
-			}
-		});
+		const all = await getReceipts();
+		if (myRole === "staff") {
+			setReceipts(all.filter((r) => r.createdBy === myUserId));
+		} else if (myRole === "store_manager") {
+			setReceipts(all.filter((r) => r.storeId === myStoreId));
+		} else {
+			setReceipts(all);
+		}
+	}, [tksUser?.id, tksUser?.role, tksUser?.storeId]);
+
+	useEffect(() => {
+		loadReceipts();
 		getStores().then(setStores);
 		getUsers().then(setUsers);
 		getTags().then(setTags);
 		getReceiptTags().then(setReceiptTagMap);
-	}, [tksUser?.id, tksUser?.role, tksUser?.storeId]);
+	}, [loadReceipts]);
 
 	const toggleColumn = (key: ColumnKey) => {
 		setVisibleCols((prev) => {
@@ -643,6 +731,8 @@ export default function ReceiptsPage() {
 				return false;
 			if (filters.storeId && r.storeId !== filters.storeId) return false;
 			if (filters.status && r.status !== filters.status) return false;
+			if (filters.aiVerified === "unverified" && r.isAiVerified) return false;
+			if (filters.aiVerified === "verified" && !r.isAiVerified) return false;
 			if (q && !(r.payee ?? "").toLowerCase().includes(q)) return false;
 			if (min != null && (r.amount ?? 0) < min) return false;
 			if (max != null && (r.amount ?? 0) > max) return false;
@@ -668,10 +758,84 @@ export default function ReceiptsPage() {
 		filters.month ||
 		filters.storeId ||
 		filters.status ||
+		filters.aiVerified ||
 		filters.payeeQuery ||
 		filters.amountMin ||
 		filters.amountMax ||
 		filters.tagIds.length > 0;
+
+	// 一括承認: 現在のロールが承認できるステータスのレシートを選択対象とする
+	const approvableStatus = approvableStatusForRole(tksUser?.role);
+
+	const approvableIds = useMemo(() => {
+		if (!approvableStatus) return new Set<string>();
+		return new Set(
+			filtered.filter((r) => r.status === approvableStatus).map((r) => r.id),
+		);
+	}, [filtered, approvableStatus]);
+
+	// フィルタ変更などで表示対象から外れた選択は無効として扱う
+	const validSelectedIds = useMemo(() => {
+		const next = new Set<string>();
+		for (const id of selectedIds) {
+			if (approvableIds.has(id)) next.add(id);
+		}
+		return next;
+	}, [selectedIds, approvableIds]);
+
+	const toggleSelect = (id: string) => {
+		setSelectedIds((prev) => {
+			const next = new Set(prev);
+			if (next.has(id)) next.delete(id);
+			else next.add(id);
+			return next;
+		});
+	};
+
+	const toggleSelectAll = () => {
+		setSelectedIds((prev) => {
+			const allSelected =
+				approvableIds.size > 0 &&
+				[...approvableIds].every((id) => prev.has(id));
+			return allSelected ? new Set() : new Set(approvableIds);
+		});
+	};
+
+	const handleBulkApprove = async () => {
+		if (!approvableStatus || validSelectedIds.size === 0) return;
+		const actor = tksUser?.id ?? null;
+		const transition = buildApprovalPatch(
+			tksUser?.role,
+			actor,
+			new Date().toISOString(),
+		);
+		if (!transition) return;
+		setBulkApproving(true);
+		try {
+			// 通知先解決のためのユーザー一覧は一度だけ取得して使い回す
+			const allUsers = await getUsers();
+			for (const id of validSelectedIds) {
+				// expectedStatus 指定で、選択後に他者が状態変更したレシートは更新しない
+				const updated = await updateReceipt(
+					id,
+					transition.patch,
+					actor,
+					approvableStatus,
+				);
+				if (updated) {
+					void notifyReceiptEvent({
+						receipt: updated,
+						event: transition.event,
+						users: allUsers,
+					});
+				}
+			}
+			setSelectedIds(new Set());
+			await loadReceipts();
+		} finally {
+			setBulkApproving(false);
+		}
+	};
 
 	return (
 		<div>
@@ -734,6 +898,21 @@ export default function ReceiptsPage() {
 				taxTotal={summary.taxTotal}
 			/>
 
+			{approvableStatus && validSelectedIds.size > 0 && (
+				<div className="mt-3 flex items-center justify-between gap-3 rounded-lg border border-primary/40 bg-primary/5 px-4 py-2.5 text-sm">
+					<span className="font-medium">{validSelectedIds.size}件を選択中</span>
+					<Button
+						size="sm"
+						onClick={handleBulkApprove}
+						disabled={bulkApproving}
+						className="bg-green-600 hover:bg-green-700"
+					>
+						<Check className="mr-1.5 h-4 w-4" />
+						{bulkApproving ? "承認中..." : "一括承認"}
+					</Button>
+				</div>
+			)}
+
 			{filtered.length > 0 ? (
 				<ReceiptTable
 					receipts={filtered}
@@ -742,6 +921,16 @@ export default function ReceiptsPage() {
 					userMap={userMap}
 					tagMap={tagMap}
 					receiptTagMap={receiptTagMap}
+					selection={
+						approvableStatus
+							? {
+									approvableIds,
+									selectedIds: validSelectedIds,
+									onToggle: toggleSelect,
+									onToggleAll: toggleSelectAll,
+								}
+							: undefined
+					}
 				/>
 			) : (
 				<div className="mt-8 flex flex-col items-center justify-center rounded-lg border border-dashed p-12 text-center">

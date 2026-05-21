@@ -1,6 +1,6 @@
 "use client";
 
-import { Plus, Trash2 } from "lucide-react";
+import { Pencil, Plus, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -10,7 +10,6 @@ import {
 	DialogFooter,
 	DialogHeader,
 	DialogTitle,
-	DialogTrigger,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -34,6 +33,7 @@ import {
 	type Receipt,
 	type Store,
 	saveCashDeposit,
+	updateCashDeposit,
 } from "@/libs/storage";
 import { formatCurrency } from "@/utils/formatCurrency";
 import { formatDate } from "@/utils/formatDate";
@@ -47,7 +47,6 @@ type LedgerRow = {
 	deposit: number;
 	withdrawal: number;
 	categoryAmounts: Record<string, number>;
-	deletable: boolean;
 };
 
 function currentYearMonth(): string {
@@ -72,6 +71,9 @@ export default function CashBookPage() {
 	const [yearMonth, setYearMonth] = useState(currentYearMonth());
 	const [depositOpen, setDepositOpen] = useState(false);
 	const [depositError, setDepositError] = useState<string | null>(null);
+	const [editingDeposit, setEditingDeposit] = useState<CashDeposit | null>(
+		null,
+	);
 
 	const role = tksUser?.role;
 	const canRecordDeposit = role === "hq_accountant" || role === "president";
@@ -108,11 +110,18 @@ export default function CashBookPage() {
 	const effectiveStoreId =
 		role === "store_manager" ? (tksUser?.storeId ?? "") : storeId;
 
-	// 当月の入金/出金を抽出（出金 = 当月内のレシート、状態は問わず実際の現金移動を反映）
+	// 差戻し（rejected）は実際の現金移動として扱わず残高計算から除外する
+	// （再申請レシートとの二重計上・却下分の永久マイナス計上を防ぐ）
+	const activeReceipts = useMemo(
+		() => receipts.filter((r) => r.status !== "rejected"),
+		[receipts],
+	);
+
+	// 当月の入金/出金を抽出（出金 = 当月内のレシート）
 	const monthDeposits = deposits.filter(
 		(d) => d.storeId === effectiveStoreId && d.date >= start && d.date <= end,
 	);
-	const monthReceipts = receipts.filter(
+	const monthReceipts = activeReceipts.filter(
 		(r) =>
 			r.storeId === effectiveStoreId &&
 			r.date != null &&
@@ -125,7 +134,7 @@ export default function CashBookPage() {
 		deposits
 			.filter((d) => d.storeId === effectiveStoreId && d.date < start)
 			.reduce((sum, d) => sum + d.amount, 0) -
-		receipts
+		activeReceipts
 			.filter(
 				(r) =>
 					r.storeId === effectiveStoreId &&
@@ -178,25 +187,50 @@ export default function CashBookPage() {
 		)
 		.reduce((sum, r) => sum + (r.amount ?? 0), 0);
 
+	const openNewDeposit = () => {
+		setEditingDeposit(null);
+		setDepositError(null);
+		setDepositOpen(true);
+	};
+
+	const openEditDeposit = (id: string) => {
+		const target = deposits.find((d) => d.id === id);
+		if (!target) return;
+		setEditingDeposit(target);
+		setDepositError(null);
+		setDepositOpen(true);
+	};
+
 	const handleSaveDeposit = async (e: React.FormEvent<HTMLFormElement>) => {
 		e.preventDefault();
 		setDepositError(null);
 		const fd = new FormData(e.currentTarget);
-		const amountStr = fd.get("amount") as string;
-		const amount = Number.parseInt(amountStr, 10);
+		const amount = Number.parseInt(fd.get("amount") as string, 10);
 		if (!Number.isFinite(amount) || amount <= 0) {
 			setDepositError("金額は正の数を入力してください");
 			return;
 		}
+		const date = fd.get("date") as string;
+		const description =
+			((fd.get("description") as string) || "").trim() || null;
 		try {
-			await saveCashDeposit({
-				storeId: effectiveStoreId,
-				date: fd.get("date") as string,
-				amount,
-				description: ((fd.get("description") as string) || "").trim() || null,
-				createdBy: tksUser?.id ?? null,
-			});
+			if (editingDeposit) {
+				await updateCashDeposit(
+					editingDeposit.id,
+					{ date, amount, description },
+					tksUser?.id ?? null,
+				);
+			} else {
+				await saveCashDeposit({
+					storeId: effectiveStoreId,
+					date,
+					amount,
+					description,
+					createdBy: tksUser?.id ?? null,
+				});
+			}
 			setDepositOpen(false);
+			setEditingDeposit(null);
 			await reload();
 		} catch (err) {
 			setDepositError(
@@ -206,7 +240,7 @@ export default function CashBookPage() {
 	};
 
 	const handleDeleteDeposit = async (id: string) => {
-		await deleteCashDeposit(id);
+		await deleteCashDeposit(id, tksUser?.id ?? null);
 		await reload();
 	};
 
@@ -229,65 +263,10 @@ export default function CashBookPage() {
 						className="h-8 w-40"
 					/>
 					{canRecordDeposit && effectiveStoreId && (
-						<Dialog
-							open={depositOpen}
-							onOpenChange={(v) => {
-								setDepositOpen(v);
-								if (!v) setDepositError(null);
-							}}
-						>
-							<DialogTrigger render={<Button size="sm" />}>
-								<Plus className="mr-1.5 h-4 w-4" />
-								入金記録
-							</DialogTrigger>
-							<DialogContent>
-								<DialogHeader>
-									<DialogTitle>入金を記録</DialogTitle>
-								</DialogHeader>
-								<form onSubmit={handleSaveDeposit} className="space-y-4">
-									<div className="space-y-2">
-										<Label htmlFor="deposit-date">日付</Label>
-										<Input
-											id="deposit-date"
-											name="date"
-											type="date"
-											defaultValue={new Date().toISOString().slice(0, 10)}
-											required
-										/>
-									</div>
-									<div className="space-y-2">
-										<Label htmlFor="deposit-amount">金額</Label>
-										<Input
-											id="deposit-amount"
-											name="amount"
-											type="number"
-											required
-										/>
-									</div>
-									<div className="space-y-2">
-										<Label htmlFor="deposit-desc">摘要（任意）</Label>
-										<Input
-											id="deposit-desc"
-											name="description"
-											placeholder="例: 補充金"
-										/>
-									</div>
-									{depositError && (
-										<p className="text-sm text-destructive">{depositError}</p>
-									)}
-									<DialogFooter>
-										<Button
-											type="button"
-											variant="outline"
-											onClick={() => setDepositOpen(false)}
-										>
-											キャンセル
-										</Button>
-										<Button type="submit">登録</Button>
-									</DialogFooter>
-								</form>
-							</DialogContent>
-						</Dialog>
+						<Button size="sm" onClick={openNewDeposit}>
+							<Plus className="mr-1.5 h-4 w-4" />
+							入金記録
+						</Button>
 					)}
 				</div>
 			</div>
@@ -325,7 +304,7 @@ export default function CashBookPage() {
 										</TableHead>
 									))}
 									<TableHead className="text-right">その他</TableHead>
-									<TableHead className="w-12" />
+									<TableHead className="w-20" />
 								</TableRow>
 							</TableHeader>
 							<TableBody>
@@ -380,15 +359,25 @@ export default function CashBookPage() {
 													: ""}
 											</TableCell>
 											<TableCell>
-												{row.deletable && canRecordDeposit && (
-													<Button
-														variant="ghost"
-														size="icon"
-														onClick={() => handleDeleteDeposit(row.id)}
-														title="入金を削除"
-													>
-														<Trash2 className="h-4 w-4" />
-													</Button>
+												{row.kind === "deposit" && canRecordDeposit && (
+													<div className="flex justify-end gap-0.5">
+														<Button
+															variant="ghost"
+															size="icon"
+															onClick={() => openEditDeposit(row.id)}
+															title="入金を編集"
+														>
+															<Pencil className="h-4 w-4" />
+														</Button>
+														<Button
+															variant="ghost"
+															size="icon"
+															onClick={() => handleDeleteDeposit(row.id)}
+															title="入金を削除"
+														>
+															<Trash2 className="h-4 w-4" />
+														</Button>
+													</div>
 												)}
 											</TableCell>
 										</TableRow>
@@ -425,6 +414,76 @@ export default function CashBookPage() {
 					</div>
 				</CardContent>
 			</Card>
+
+			{/* 入金 登録 / 編集ダイアログ */}
+			<Dialog
+				open={depositOpen}
+				onOpenChange={(v) => {
+					setDepositOpen(v);
+					if (!v) {
+						setDepositError(null);
+						setEditingDeposit(null);
+					}
+				}}
+			>
+				<DialogContent>
+					<DialogHeader>
+						<DialogTitle>
+							{editingDeposit ? "入金を編集" : "入金を記録"}
+						</DialogTitle>
+					</DialogHeader>
+					<form
+						key={editingDeposit?.id ?? "new"}
+						onSubmit={handleSaveDeposit}
+						className="space-y-4"
+					>
+						<div className="space-y-2">
+							<Label htmlFor="deposit-date">日付</Label>
+							<Input
+								id="deposit-date"
+								name="date"
+								type="date"
+								defaultValue={
+									editingDeposit?.date ?? new Date().toISOString().slice(0, 10)
+								}
+								required
+							/>
+						</div>
+						<div className="space-y-2">
+							<Label htmlFor="deposit-amount">金額</Label>
+							<Input
+								id="deposit-amount"
+								name="amount"
+								type="number"
+								defaultValue={editingDeposit?.amount ?? ""}
+								required
+							/>
+						</div>
+						<div className="space-y-2">
+							<Label htmlFor="deposit-desc">摘要（任意）</Label>
+							<Input
+								id="deposit-desc"
+								name="description"
+								defaultValue={editingDeposit?.description ?? ""}
+								placeholder="例: 補充金"
+							/>
+						</div>
+						{depositError && (
+							<p className="text-sm text-destructive">{depositError}</p>
+						)}
+						<DialogFooter>
+							<Button
+								type="button"
+								variant="outline"
+								onClick={() => setDepositOpen(false)}
+							>
+								キャンセル
+							</Button>
+							<Button type="submit">{editingDeposit ? "更新" : "登録"}</Button>
+						</DialogFooter>
+					</form>
+				</DialogContent>
+			</Dialog>
 		</div>
 	);
 }
@@ -445,7 +504,6 @@ function useMemoBuildRows(
 				deposit: d.amount,
 				withdrawal: 0,
 				categoryAmounts: {},
-				deletable: true,
 			});
 		}
 		for (const r of receipts) {
@@ -465,7 +523,6 @@ function useMemoBuildRows(
 				categoryAmounts: isKnown
 					? { [cat as string]: amount }
 					: { __other: amount },
-				deletable: false,
 			});
 		}
 		list.sort((a, b) => {

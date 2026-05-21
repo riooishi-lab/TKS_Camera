@@ -98,6 +98,25 @@ export type AuditLog = {
 	diff: Record<string, unknown> | null;
 };
 
+export type NotificationType =
+	| "receipt_submitted"
+	| "receipt_resubmitted"
+	| "receipt_approved"
+	| "receipt_fully_approved"
+	| "receipt_rejected"
+	| "receipt_paid";
+
+export type AppNotification = {
+	id: string;
+	recipientId: string;
+	type: NotificationType;
+	receiptId: string | null;
+	title: string;
+	body: string | null;
+	isRead: boolean;
+	createdAt: string;
+};
+
 // ===== Stores =====
 
 export async function getStores(): Promise<Store[]> {
@@ -149,6 +168,18 @@ function mapStore(s: Record<string, unknown>): Store {
 }
 
 // ===== Receipts =====
+
+// 内容編集を許可するステータス。
+// manager_approved 以降は承認後の改ざんを防ぐため編集ロックする。
+// rejected は差戻し後の修正・再申請のため編集可能とする。
+export const EDITABLE_RECEIPT_STATUSES: ReceiptStatus[] = [
+	"pending",
+	"rejected",
+];
+
+export function isReceiptEditable(status: ReceiptStatus): boolean {
+	return EDITABLE_RECEIPT_STATUSES.includes(status);
+}
 
 export async function getReceipts(): Promise<Receipt[]> {
 	const { data, error } = await getSupabase()
@@ -225,6 +256,9 @@ export async function updateReceipt(
 	id: string,
 	input: Partial<Omit<Receipt, "id" | "createdAt">>,
 	actorUserId?: string | null,
+	// 楽観ロック: 指定時は現在ステータスが一致する場合のみ更新する。
+	// 一覧での一括承認など、取得後に他者が状態を変えたレシートの上書きを防ぐ。
+	expectedStatus?: ReceiptStatus,
 ): Promise<Receipt | null> {
 	const before = await getReceipt(id);
 	const row: Record<string, unknown> = {
@@ -264,12 +298,12 @@ export async function updateReceipt(
 	if (input.paidBy !== undefined) row.paid_by = input.paidBy;
 	if (input.paidAt !== undefined) row.paid_at = input.paidAt;
 
-	const { data } = await getSupabase()
-		.from("tks_receipts")
-		.update(row)
-		.eq("id", id)
-		.select()
-		.single();
+	let query = getSupabase().from("tks_receipts").update(row).eq("id", id);
+	if (expectedStatus !== undefined) {
+		query = query.eq("status", expectedStatus);
+	}
+	const { data } = await query.select().maybeSingle();
+	// 該当行なし = レコード不在、または expectedStatus 不一致（他者が更新済み）
 	if (!data) return null;
 	const after = mapReceipt(data);
 	const diff = buildReceiptDiff(before, after);
@@ -678,6 +712,20 @@ export async function getCashDeposits(): Promise<CashDeposit[]> {
 	return (data ?? []).map(mapCashDeposit);
 }
 
+async function getCashDeposit(id: string): Promise<CashDeposit | null> {
+	const { data } = await getSupabase()
+		.from("tks_cash_deposits")
+		.select("*")
+		.eq("id", id)
+		.maybeSingle();
+	return data ? mapCashDeposit(data) : null;
+}
+
+// 入金記録は現金残高に直結するため、レシート同様すべての変更を監査ログに残す
+function stripDepositForAudit(d: CashDeposit): Record<string, unknown> {
+	return { date: d.date, amount: d.amount, description: d.description };
+}
+
 export async function saveCashDeposit(input: {
 	storeId: string;
 	date: string;
@@ -697,7 +745,11 @@ export async function saveCashDeposit(input: {
 		.select()
 		.single();
 	if (error) throw new Error(error.message);
-	return mapCashDeposit(data);
+	const mapped = mapCashDeposit(data);
+	await writeAuditLog("cash_deposit", mapped.id, "create", input.createdBy, {
+		after: stripDepositForAudit(mapped),
+	});
+	return mapped;
 }
 
 export async function updateCashDeposit(
@@ -707,7 +759,9 @@ export async function updateCashDeposit(
 		amount: number;
 		description: string | null;
 	}>,
+	actorUserId?: string | null,
 ): Promise<CashDeposit | null> {
+	const before = await getCashDeposit(id);
 	const row: Record<string, unknown> = {};
 	if (input.date !== undefined) row.date = input.date;
 	if (input.amount !== undefined) row.amount = input.amount;
@@ -717,16 +771,35 @@ export async function updateCashDeposit(
 		.update(row)
 		.eq("id", id)
 		.select()
-		.single();
-	return data ? mapCashDeposit(data) : null;
+		.maybeSingle();
+	if (!data) return null;
+	const after = mapCashDeposit(data);
+	if (before) {
+		const diff: Record<string, { from: unknown; to: unknown }> = {};
+		for (const k of ["date", "amount", "description"] as const) {
+			if (before[k] !== after[k]) diff[k] = { from: before[k], to: after[k] };
+		}
+		if (Object.keys(diff).length > 0) {
+			await writeAuditLog("cash_deposit", id, "update", actorUserId, { diff });
+		}
+	}
+	return after;
 }
 
-export async function deleteCashDeposit(id: string): Promise<boolean> {
+export async function deleteCashDeposit(
+	id: string,
+	actorUserId?: string | null,
+): Promise<boolean> {
+	const before = await getCashDeposit(id);
 	const { error } = await getSupabase()
 		.from("tks_cash_deposits")
 		.delete()
 		.eq("id", id);
-	return !error;
+	if (error) return false;
+	await writeAuditLog("cash_deposit", id, "delete", actorUserId, {
+		before: before ? stripDepositForAudit(before) : null,
+	});
+	return true;
 }
 
 function mapCashDeposit(d: Record<string, unknown>): CashDeposit {
@@ -738,6 +811,77 @@ function mapCashDeposit(d: Record<string, unknown>): CashDeposit {
 		description: (d.description as string | null) ?? null,
 		createdBy: (d.created_by as string | null) ?? null,
 		createdAt: d.created_at as string,
+	};
+}
+
+// ===== Notifications =====
+
+export async function getNotifications(
+	recipientId: string,
+): Promise<AppNotification[]> {
+	const { data, error } = await getSupabase()
+		.from("tks_notifications")
+		.select("*")
+		.eq("recipient_id", recipientId)
+		.order("created_at", { ascending: false })
+		.limit(50);
+	if (error) console.error("getNotifications:", error.message);
+	return (data ?? []).map(mapNotification);
+}
+
+export async function createNotifications(
+	rows: {
+		recipientId: string;
+		type: NotificationType;
+		receiptId: string | null;
+		title: string;
+		body: string | null;
+	}[],
+): Promise<void> {
+	if (rows.length === 0) return;
+	const { error } = await getSupabase()
+		.from("tks_notifications")
+		.insert(
+			rows.map((r) => ({
+				recipient_id: r.recipientId,
+				type: r.type,
+				receipt_id: r.receiptId,
+				title: r.title,
+				body: r.body,
+			})),
+		);
+	if (error) console.error("createNotifications:", error.message);
+}
+
+export async function markNotificationRead(id: string): Promise<void> {
+	const { error } = await getSupabase()
+		.from("tks_notifications")
+		.update({ is_read: true })
+		.eq("id", id);
+	if (error) console.error("markNotificationRead:", error.message);
+}
+
+export async function markAllNotificationsRead(
+	recipientId: string,
+): Promise<void> {
+	const { error } = await getSupabase()
+		.from("tks_notifications")
+		.update({ is_read: true })
+		.eq("recipient_id", recipientId)
+		.eq("is_read", false);
+	if (error) console.error("markAllNotificationsRead:", error.message);
+}
+
+function mapNotification(n: Record<string, unknown>): AppNotification {
+	return {
+		id: n.id as string,
+		recipientId: n.recipient_id as string,
+		type: n.type as NotificationType,
+		receiptId: (n.receipt_id as string | null) ?? null,
+		title: n.title as string,
+		body: (n.body as string | null) ?? null,
+		isRead: n.is_read as boolean,
+		createdAt: n.created_at as string,
 	};
 }
 
