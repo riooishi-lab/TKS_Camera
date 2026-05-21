@@ -26,6 +26,7 @@ import {
 import { ACCOUNT_CATEGORIES } from "@/constants/accountCategories";
 import { PAGE_PATH } from "@/constants/pagePath";
 import { useAuth } from "@/contexts/AuthContext";
+import { notifyReceiptEvent } from "@/libs/notifications";
 import {
 	fileToBase64,
 	findDuplicateReceipts,
@@ -457,6 +458,8 @@ export function NewReceiptFlow() {
 				if (s.selectedTagIds.length > 0) {
 					await setReceiptTags(saved.id, s.selectedTagIds, tksUser?.id ?? null);
 				}
+				// 店舗管理者へ申請通知（店舗未割当の場合は通知先なしでスキップ）
+				void notifyReceiptEvent({ receipt: saved, event: "submitted" });
 				updateSheet(s.id, { status: "saved" });
 			}
 			setCompleteDialogOpen(true);

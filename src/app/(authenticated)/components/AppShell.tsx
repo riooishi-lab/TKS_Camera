@@ -26,6 +26,7 @@ import { PAGE_PATH } from "@/constants/pagePath";
 import { useAuth } from "@/contexts/AuthContext";
 import { cn } from "@/lib/utils";
 import type { UserRole } from "@/libs/storage";
+import { NotificationBell } from "./NotificationBell";
 
 type NavItem = {
 	href: string;
@@ -217,6 +218,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 					</Link>
 
 					<div className="ml-auto flex items-center gap-2">
+						<NotificationBell />
 						{tksUser && (
 							<span className="text-xs text-muted-foreground">
 								{tksUser.name ?? tksUser.email}

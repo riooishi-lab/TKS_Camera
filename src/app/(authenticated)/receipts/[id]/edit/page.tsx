@@ -24,6 +24,7 @@ import {
 	getStores,
 	getTags,
 	getTagsForReceipt,
+	isReceiptEditable,
 	type Receipt,
 	type Store,
 	setReceiptTags,
@@ -57,6 +58,11 @@ export default function EditReceiptPage() {
 			}
 			if (myRole === "store_manager" && r.storeId !== myStoreId) {
 				router.replace(PAGE_PATH.receipts);
+				return;
+			}
+			// 承認済み・支払済みのレシートは改ざん防止のため編集不可
+			if (!isReceiptEditable(r.status)) {
+				router.replace(PAGE_PATH.receiptDetail(params.id));
 				return;
 			}
 			setReceipt(r);
