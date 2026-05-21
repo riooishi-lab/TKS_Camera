@@ -1,7 +1,9 @@
 import { defineConfig, devices } from "@playwright/test";
 
 const PORT = Number(process.env.E2E_PORT ?? 3100);
-const BASE_URL = `http://127.0.0.1:${PORT}`;
+// localhost を使う。127.0.0.1 だと Next.js 16 のクロスオリジン保護で
+// /_next/ の dev リソースがブロックされ、クライアントが hydration できない。
+const BASE_URL = `http://localhost:${PORT}`;
 
 export default defineConfig({
 	testDir: "./e2e",
