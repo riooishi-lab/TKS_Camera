@@ -511,12 +511,13 @@ export async function updateUser(
 	if (input.status !== undefined) row.status = input.status;
 	if (input.storeId !== undefined) row.store_id = input.storeId;
 
-	const { data } = await getSupabase()
+	const { data, error } = await getSupabase()
 		.from("tks_users")
 		.update(row)
 		.eq("id", id)
 		.select()
 		.single();
+	if (error) throw new Error(error.message);
 	return data ? mapUser(data) : null;
 }
 

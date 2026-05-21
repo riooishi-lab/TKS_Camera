@@ -1,6 +1,10 @@
 "use client";
 
-import { createUserWithEmailAndPassword } from "firebase/auth";
+import { FirebaseError } from "firebase/app";
+import {
+	createUserWithEmailAndPassword,
+	signInWithEmailAndPassword,
+} from "firebase/auth";
 import { Loader2 } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
@@ -10,6 +14,23 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { getFirebaseAuth } from "@/libs/firebase";
 import { getUserByInviteCode, type TksUser, updateUser } from "@/libs/storage";
+
+function registerErrorMessage(err: unknown): string {
+	if (err instanceof FirebaseError) {
+		switch (err.code) {
+			case "auth/wrong-password":
+			case "auth/invalid-credential":
+				return "このメールアドレスは既に別のパスワードで登録されています。前回登録時のパスワードを入力するか、管理者にお問い合わせください。";
+			case "auth/email-already-in-use":
+				return "このメールアドレスは既に登録済みです";
+			case "auth/too-many-requests":
+				return "試行回数が多すぎます。しばらく待ってから再度お試しください。";
+			default:
+				return err.message;
+		}
+	}
+	return err instanceof Error ? err.message : "エラーが発生しました";
+}
 
 function RegisterForm() {
 	const router = useRouter();
@@ -75,26 +96,47 @@ function RegisterForm() {
 		setSubmitting(true);
 		try {
 			const auth = getFirebaseAuth();
-			const cred = await createUserWithEmailAndPassword(
-				auth,
-				invite.email,
-				password,
-			);
+
+			let firebaseUid: string;
+			try {
+				const cred = await createUserWithEmailAndPassword(
+					auth,
+					invite.email,
+					password,
+				);
+				firebaseUid = cred.user.uid;
+			} catch (err) {
+				// 過去の登録試行で Firebase Auth だけ作成され、DB 更新（下の
+				// updateUser）が失敗して残った「孤立アカウント」を救済する。
+				// 入力パスワードでサインインできれば、DB 行の active 化のみを
+				// やり直す。invite は status="pending" の招待行に限られる
+				// （getUserByInviteCode が保証）。さらに firebaseUid が既に
+				// 紐付く行は登録完了済みとみなし、救済の対象から除外する。
+				if (
+					err instanceof FirebaseError &&
+					err.code === "auth/email-already-in-use" &&
+					!invite.firebaseUid
+				) {
+					const cred = await signInWithEmailAndPassword(
+						auth,
+						invite.email,
+						password,
+					);
+					firebaseUid = cred.user.uid;
+				} else {
+					throw err;
+				}
+			}
 
 			await updateUser(invite.id, {
-				firebaseUid: cred.user.uid,
+				firebaseUid,
 				name,
 				status: "active",
 			});
 
 			router.replace("/receipts");
 		} catch (err) {
-			const msg = err instanceof Error ? err.message : "エラーが発生しました";
-			if (msg.includes("email-already-in-use")) {
-				setError("このメールアドレスは既に登録済みです");
-			} else {
-				setError(msg);
-			}
+			setError(registerErrorMessage(err));
 		} finally {
 			setSubmitting(false);
 		}
