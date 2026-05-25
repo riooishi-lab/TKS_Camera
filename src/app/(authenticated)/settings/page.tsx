@@ -9,7 +9,7 @@ import { useAuth } from "@/contexts/AuthContext";
 export default function SettingsPage() {
 	const { tksUser } = useAuth();
 
-	if (tksUser?.role === "staff") {
+	if (tksUser?.role === "store_staff") {
 		return (
 			<div className="py-12 text-center text-muted-foreground">
 				このページにはアクセスできません

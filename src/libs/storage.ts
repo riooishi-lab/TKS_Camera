@@ -3,7 +3,7 @@ import { getSupabase } from "./supabase";
 // ===== Types =====
 
 export type UserRole =
-	| "staff"
+	| "store_staff"
 	| "store_manager"
 	| "hq_accountant"
 	| "president";
@@ -32,7 +32,6 @@ export type ReceiptStatus =
 	| "pending"
 	| "manager_approved"
 	| "accountant_approved"
-	| "approved"
 	| "paid"
 	| "rejected";
 
@@ -200,6 +199,9 @@ export async function getReceipt(id: string): Promise<Receipt | null> {
 	return data ? mapReceipt(data) : null;
 }
 
+// 店長(store_manager)が起票したレシートは pending を経ずに manager_approved で
+// 作成されるため、起票と同時に承認情報を埋められるよう
+// managerApprovedBy / managerApprovedAt は input から省かない。
 export async function saveReceipt(
 	input: Omit<
 		Receipt,
@@ -208,8 +210,6 @@ export async function saveReceipt(
 		| "updatedAt"
 		| "createdBy"
 		| "updatedBy"
-		| "managerApprovedBy"
-		| "managerApprovedAt"
 		| "accountantApprovedBy"
 		| "accountantApprovedAt"
 		| "presidentApprovedBy"
@@ -239,6 +239,8 @@ export async function saveReceipt(
 			ai_raw_response: input.aiRawResponse,
 			ai_confidence: input.aiConfidence,
 			is_ai_verified: input.isAiVerified,
+			manager_approved_by: input.managerApprovedBy,
+			manager_approved_at: input.managerApprovedAt,
 			created_by: actorUserId ?? null,
 			updated_by: actorUserId ?? null,
 		})

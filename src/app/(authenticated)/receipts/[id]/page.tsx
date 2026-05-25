@@ -55,7 +55,6 @@ const STATUS_LABELS: Record<ReceiptStatus, string> = {
 	pending: "申請中",
 	manager_approved: "店長承認済",
 	accountant_approved: "経理承認済",
-	approved: "全承認済",
 	rejected: "差戻し",
 	paid: "支払済",
 };
@@ -66,8 +65,7 @@ const STATUS_VARIANTS: Record<
 > = {
 	pending: "secondary",
 	manager_approved: "secondary",
-	accountant_approved: "secondary",
-	approved: "default",
+	accountant_approved: "default",
 	rejected: "destructive",
 	paid: "outline",
 };
@@ -102,34 +100,26 @@ export default function ReceiptDetailPage() {
 		receipt.createdBy === tksUser?.id;
 
 	// 各ロールが現在のステータスで実行できるアクション
+	// Phase 5: 社長承認ステージを廃止し、3段階(店長→経理→支払)に簡素化
 	const canManagerApprove =
 		role === "store_manager" && receipt?.status === "pending";
 	const canAccountantApprove =
 		role === "hq_accountant" && receipt?.status === "manager_approved";
-	const canPresidentApprove =
-		role === "president" && receipt?.status === "accountant_approved";
-	const canApprove =
-		canManagerApprove || canAccountantApprove || canPresidentApprove;
+	const canApprove = canManagerApprove || canAccountantApprove;
 	// 差戻しは各承認者が自分のステージでのみ可能
 	const canReject = canApprove;
-	// 支払いは経理が approved 状態で実行
+	// 支払いは経理が accountant_approved 状態で実行
 	const canMarkPaid =
-		role === "hq_accountant" && receipt?.status === "approved";
+		role === "hq_accountant" && receipt?.status === "accountant_approved";
 
 	// 承認・支払の取り消し（巻き戻し）: 各ステージを実行したロールが1段階前に戻せる
 	const canRevertManager =
 		role === "store_manager" && receipt?.status === "manager_approved";
 	const canRevertAccountant =
 		role === "hq_accountant" && receipt?.status === "accountant_approved";
-	const canRevertPresident =
-		role === "president" && receipt?.status === "approved";
 	const canRevertPayment =
 		role === "hq_accountant" && receipt?.status === "paid";
-	const canRevert =
-		canRevertManager ||
-		canRevertAccountant ||
-		canRevertPresident ||
-		canRevertPayment;
+	const canRevert = canRevertManager || canRevertAccountant || canRevertPayment;
 	const revertLabel = canRevertPayment ? "支払を取り消す" : "承認を取り消す";
 
 	useEffect(() => {
@@ -141,7 +131,7 @@ export default function ReceiptDetailPage() {
 				router.replace(PAGE_PATH.receipts);
 				return;
 			}
-			if (myRole === "staff" && r.createdBy !== myUserId) {
+			if (myRole === "store_staff" && r.createdBy !== myUserId) {
 				router.replace(PAGE_PATH.receipts);
 				return;
 			}
@@ -183,7 +173,6 @@ export default function ReceiptDetailPage() {
 	const applicantName = userNameById(receipt.createdBy);
 	const managerApproverName = userNameById(receipt.managerApprovedBy);
 	const accountantApproverName = userNameById(receipt.accountantApprovedBy);
-	const presidentApproverName = userNameById(receipt.presidentApprovedBy);
 	const paidByName = userNameById(receipt.paidBy);
 
 	const handleDelete = async () => {
@@ -211,7 +200,11 @@ export default function ReceiptDetailPage() {
 			);
 			if (updated) {
 				setReceipt(updated);
-				void notifyReceiptEvent({ receipt: updated, event: transition.event });
+				void notifyReceiptEvent({
+					receipt: updated,
+					event: transition.event,
+					actorId: actor,
+				});
 			} else {
 				setActionError(STALE_MESSAGE);
 			}
@@ -239,7 +232,11 @@ export default function ReceiptDetailPage() {
 			);
 			if (updated) {
 				setReceipt(updated);
-				void notifyReceiptEvent({ receipt: updated, event: "rejected" });
+				void notifyReceiptEvent({
+					receipt: updated,
+					event: "rejected",
+					actorId: actor,
+				});
 				setRejectOpen(false);
 				setRejectionReason("");
 			} else {
@@ -265,7 +262,11 @@ export default function ReceiptDetailPage() {
 			);
 			if (updated) {
 				setReceipt(updated);
-				void notifyReceiptEvent({ receipt: updated, event: "paid" });
+				void notifyReceiptEvent({
+					receipt: updated,
+					event: "paid",
+					actorId: actor,
+				});
 			} else {
 				setActionError(STALE_MESSAGE);
 			}
@@ -281,6 +282,7 @@ export default function ReceiptDetailPage() {
 		const actor = tksUser?.id ?? null;
 		try {
 			// 現在のステータスに応じて1段階前に巻き戻し、当該ステージの承認情報をクリアする
+			// Phase 5: 社長ステージを廃止し、支払の巻き戻しは accountant_approved へ戻す
 			let patch: Partial<Receipt>;
 			if (canRevertManager) {
 				patch = {
@@ -294,15 +296,9 @@ export default function ReceiptDetailPage() {
 					accountantApprovedBy: null,
 					accountantApprovedAt: null,
 				};
-			} else if (canRevertPresident) {
-				patch = {
-					status: "accountant_approved",
-					presidentApprovedBy: null,
-					presidentApprovedAt: null,
-				};
 			} else if (canRevertPayment) {
 				patch = {
-					status: "approved",
+					status: "accountant_approved",
 					paidBy: null,
 					paidAt: null,
 				};
@@ -342,15 +338,17 @@ export default function ReceiptDetailPage() {
 					managerApprovedAt: null,
 					accountantApprovedBy: null,
 					accountantApprovedAt: null,
-					presidentApprovedBy: null,
-					presidentApprovedAt: null,
 				},
 				actor,
 				receipt.status,
 			);
 			if (updated) {
 				setReceipt(updated);
-				void notifyReceiptEvent({ receipt: updated, event: "resubmitted" });
+				void notifyReceiptEvent({
+					receipt: updated,
+					event: "resubmitted",
+					actorId: actor,
+				});
 			} else {
 				setActionError(STALE_MESSAGE);
 			}
@@ -555,11 +553,6 @@ export default function ReceiptDetailPage() {
 							label="経理承認"
 							at={receipt.accountantApprovedAt}
 							by={accountantApproverName}
-						/>
-						<ApprovalStep
-							label="社長承認"
-							at={receipt.presidentApprovedAt}
-							by={presidentApproverName}
 						/>
 						<ApprovalStep label="支払い" at={receipt.paidAt} by={paidByName} />
 						{receipt.status === "rejected" && (

@@ -423,17 +423,22 @@ export function NewReceiptFlow() {
 		}
 		setIsSavingAll(true);
 		setGlobalError(null);
+		// 店長(store_manager)の起票は pending を経ずに manager_approved を自動付与し、
+		// 経理通知(manager_approved)に直結させる。Phase 5 設計 REQ-A-02 / US-2.2。
+		const isManagerSelfFiling = tksUser?.role === "store_manager";
+		const actorId = tksUser?.id ?? null;
 		try {
 			for (const s of sheets) {
 				if (s.status === "saved") continue;
 				updateSheet(s.id, { status: "saving" });
 				const v = s.formValues;
+				const now = new Date().toISOString();
 				const saved = await saveReceipt(
 					{
 						storeId: skipAssignment
 							? null
 							: v.storeId || defaultStoreId || null,
-						status: "pending",
+						status: isManagerSelfFiling ? "manager_approved" : "pending",
 						date: v.date || null,
 						payee: v.payee || null,
 						amount: v.amount ? Math.round(Number(v.amount)) : null,
@@ -452,14 +457,21 @@ export function NewReceiptFlow() {
 						aiRawResponse: s.aiRawResponse,
 						aiConfidence: s.extraction?.confidence ?? null,
 						isAiVerified: false,
+						managerApprovedBy: isManagerSelfFiling ? actorId : null,
+						managerApprovedAt: isManagerSelfFiling ? now : null,
 					},
-					tksUser?.id ?? null,
+					actorId,
 				);
 				if (s.selectedTagIds.length > 0) {
-					await setReceiptTags(saved.id, s.selectedTagIds, tksUser?.id ?? null);
+					await setReceiptTags(saved.id, s.selectedTagIds, actorId);
 				}
-				// 店舗管理者へ申請通知（店舗未割当の場合は通知先なしでスキップ）
-				void notifyReceiptEvent({ receipt: saved, event: "submitted" });
+				// 通知: 通常は店舗管理者へ申請通知。
+				// 店長自身が起票した場合は manager_approved として経理へ通知する。
+				void notifyReceiptEvent({
+					receipt: saved,
+					event: isManagerSelfFiling ? "manager_approved" : "submitted",
+					actorId,
+				});
 				updateSheet(s.id, { status: "saved" });
 			}
 			setCompleteDialogOpen(true);

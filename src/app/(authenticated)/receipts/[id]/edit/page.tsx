@@ -52,7 +52,7 @@ export default function EditReceiptPage() {
 				router.replace(PAGE_PATH.receipts);
 				return;
 			}
-			if (myRole === "staff" && r.createdBy !== myUserId) {
+			if (myRole === "store_staff" && r.createdBy !== myUserId) {
 				router.replace(PAGE_PATH.receipts);
 				return;
 			}

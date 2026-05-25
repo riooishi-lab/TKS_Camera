@@ -147,7 +147,7 @@ export default function CashBookPage() {
 	// 行の組み立て: 入金 + 出金 を日付順
 	const rows: LedgerRow[] = useMemoBuildRows(monthDeposits, monthReceipts);
 
-	if (role === "staff") {
+	if (role === "store_staff") {
 		return (
 			<div className="py-12 text-center text-muted-foreground">
 				このページにはアクセスできません

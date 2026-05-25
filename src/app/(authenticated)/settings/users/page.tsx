@@ -24,6 +24,7 @@ import {
 	TableHeader,
 	TableRow,
 } from "@/components/ui/table";
+import { ROLE_LABELS, USER_ROLES } from "@/constants/roles";
 import { useAuth } from "@/contexts/AuthContext";
 import {
 	createUser,
@@ -36,20 +37,13 @@ import {
 	updateUser,
 } from "@/libs/storage";
 
-const ROLE_LABELS: Record<UserRole, string> = {
-	staff: "スタッフ",
-	store_manager: "店舗管理者",
-	hq_accountant: "本社経理",
-	president: "社長",
-};
-
 export default function UsersPage() {
 	const { tksUser } = useAuth();
 	const [users, setUsers] = useState<TksUser[]>([]);
 	const [stores, setStores] = useState<Store[]>([]);
 	const [open, setOpen] = useState(false);
 	const [email, setEmail] = useState("");
-	const [role, setRole] = useState<UserRole>("staff");
+	const [role, setRole] = useState<UserRole>("store_staff");
 	const [storeId, setStoreId] = useState("");
 	const [error, setError] = useState("");
 	const [inviteLink, setInviteLink] = useState("");
@@ -181,14 +175,11 @@ export default function UsersPage() {
 									onChange={(e) => setRole(e.target.value as UserRole)}
 									className="flex h-8 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none focus-visible:border-ring"
 								>
-									<option value="staff">{ROLE_LABELS.staff}</option>
-									<option value="store_manager">
-										{ROLE_LABELS.store_manager}
-									</option>
-									<option value="hq_accountant">
-										{ROLE_LABELS.hq_accountant}
-									</option>
-									<option value="president">{ROLE_LABELS.president}</option>
+									{USER_ROLES.map((r) => (
+										<option key={r} value={r}>
+											{ROLE_LABELS[r]}
+										</option>
+									))}
 								</select>
 							</div>
 							<div className="space-y-2">
@@ -256,14 +247,11 @@ export default function UsersPage() {
 											}
 											className="h-7 rounded border border-input bg-transparent px-1.5 text-xs outline-none"
 										>
-											<option value="staff">{ROLE_LABELS.staff}</option>
-											<option value="store_manager">
-												{ROLE_LABELS.store_manager}
-											</option>
-											<option value="hq_accountant">
-												{ROLE_LABELS.hq_accountant}
-											</option>
-											<option value="president">{ROLE_LABELS.president}</option>
+											{USER_ROLES.map((r) => (
+												<option key={r} value={r}>
+													{ROLE_LABELS[r]}
+												</option>
+											))}
 										</select>
 									)}
 								</TableCell>
