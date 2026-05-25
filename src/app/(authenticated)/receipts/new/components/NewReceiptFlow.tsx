@@ -16,23 +16,17 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { NativeSelect } from "@/components/ui/native-select";
-import {
-	Select,
-	SelectContent,
-	SelectItem,
-	SelectTrigger,
-	SelectValue,
-} from "@/components/ui/select";
-import { ACCOUNT_CATEGORIES } from "@/constants/accountCategories";
 import { PAGE_PATH } from "@/constants/pagePath";
 import { useAuth } from "@/contexts/AuthContext";
 import { notifyReceiptEvent } from "@/libs/notifications";
+import { aggregateLines } from "@/libs/receipt-aggregation";
 import {
 	fileToBase64,
 	findDuplicateReceipts,
 	getStores,
 	getTags,
 	type Receipt,
+	replaceReceiptLines,
 	type Store,
 	saveReceipt,
 	setReceiptTags,
@@ -41,6 +35,12 @@ import {
 import type { ReceiptExtraction } from "@/types/receipt";
 import { formatCurrency } from "@/utils/formatCurrency";
 import { formatDate } from "@/utils/formatDate";
+import {
+	type DraftLine,
+	emptyDraftLine,
+	normalizeLines,
+	ReceiptLinesEditor,
+} from "../../components/ReceiptLinesEditor";
 import { TagPicker } from "../../components/TagPicker";
 import { ImageCapture } from "./ImageCapture";
 
@@ -71,30 +71,26 @@ type ReceiptSheet = {
 type FormValues = {
 	date: string;
 	payee: string;
-	amount: string;
-	taxAmount: string;
-	taxRateCategory: string;
-	accountCategory: string;
+	itemName: string;
 	description: string;
 	invoiceRegistrationNo: string;
 	storeId: string;
 	purpose: string;
 	participants: string;
+	lines: DraftLine[];
 };
 
 function emptyForm(storeId = ""): FormValues {
 	return {
 		date: "",
 		payee: "",
-		amount: "",
-		taxAmount: "",
-		taxRateCategory: "",
-		accountCategory: "",
+		itemName: "",
 		description: "",
 		invoiceRegistrationNo: "",
 		storeId,
 		purpose: "",
 		participants: "",
+		lines: [emptyDraftLine()],
 	};
 }
 
@@ -102,16 +98,30 @@ function applyExtraction(
 	base: FormValues,
 	extraction: ReceiptExtraction,
 ): FormValues {
+	// AI が返した lines を編集用のドラフトに変換。
+	// lines が空のケースは route.ts 側のフォールバックで合成されるはずだが、
+	// 念のためここでも空配列なら 1行のドラフトを残す。
+	const drafts: DraftLine[] = extraction.lines.length
+		? extraction.lines.map((l) => ({
+				taxRate: String(l.taxRate) as DraftLine["taxRate"],
+				amountTaxIncl: String(l.amountTaxIncl),
+				accountCategory: l.accountCategory ?? "雑費",
+				itemName: l.itemName ?? "",
+				invoiceEligible: true,
+			}))
+		: [emptyDraftLine()];
 	return {
 		...base,
 		date: extraction.date ?? "",
 		payee: extraction.payee ?? "",
-		amount: extraction.amount != null ? String(extraction.amount) : "",
-		taxAmount: extraction.taxAmount != null ? String(extraction.taxAmount) : "",
-		taxRateCategory: extraction.taxRateCategory ?? "",
-		accountCategory: extraction.accountCategory ?? "",
+		// 旧 description は摘要として残しつつ、品目はレシート単位の代表値として複合表示
+		itemName: drafts
+			.map((d) => d.itemName)
+			.filter(Boolean)
+			.join(", "),
 		description: extraction.description ?? "",
 		invoiceRegistrationNo: extraction.invoiceRegistrationNo ?? "",
+		lines: drafts,
 	};
 }
 
@@ -146,59 +156,20 @@ function ReceiptFormFields({
 					/>
 				</div>
 			</div>
-			<div className="grid gap-4 sm:grid-cols-2">
-				<div className="space-y-2">
-					<Label>金額（税込）</Label>
-					<Input
-						type="number"
-						value={values.amount}
-						onChange={(e) => set("amount", e.target.value)}
-					/>
-				</div>
-				<div className="space-y-2">
-					<Label>消費税額</Label>
-					<Input
-						type="number"
-						value={values.taxAmount}
-						onChange={(e) => set("taxAmount", e.target.value)}
-					/>
-				</div>
-			</div>
-			<div className="grid gap-4 sm:grid-cols-2">
-				<div className="space-y-2">
-					<Label>税率区分</Label>
-					<Select
-						value={values.taxRateCategory}
-						onValueChange={(v) => set("taxRateCategory", (v as string) ?? "")}
-					>
-						<SelectTrigger>
-							<SelectValue placeholder="選択" />
-						</SelectTrigger>
-						<SelectContent>
-							<SelectItem value="10">標準税率 (10%)</SelectItem>
-							<SelectItem value="8">軽減税率 (8%)</SelectItem>
-							<SelectItem value="mixed">混在</SelectItem>
-						</SelectContent>
-					</Select>
-				</div>
-				<div className="space-y-2">
-					<Label>勘定科目</Label>
-					<Select
-						value={values.accountCategory}
-						onValueChange={(v) => set("accountCategory", (v as string) ?? "")}
-					>
-						<SelectTrigger>
-							<SelectValue placeholder="選択" />
-						</SelectTrigger>
-						<SelectContent>
-							{ACCOUNT_CATEGORIES.map((c) => (
-								<SelectItem key={c.value} value={c.value}>
-									{c.label}
-								</SelectItem>
-							))}
-						</SelectContent>
-					</Select>
-				</div>
+
+			{/* Phase 5: 税率・勘定科目混在に対応した明細編集 */}
+			<ReceiptLinesEditor
+				value={values.lines}
+				onChange={(lines) => set("lines", lines)}
+			/>
+
+			<div className="space-y-2">
+				<Label>品目（一覧用代表値）</Label>
+				<Input
+					value={values.itemName}
+					onChange={(e) => set("itemName", e.target.value)}
+					placeholder="例: 文具一式・お茶"
+				/>
 			</div>
 			<div className="space-y-2">
 				<Label>摘要・説明</Label>
@@ -432,7 +403,24 @@ export function NewReceiptFlow() {
 				if (s.status === "saved") continue;
 				updateSheet(s.id, { status: "saving" });
 				const v = s.formValues;
+				const normalizedLines = normalizeLines(v.lines);
+				if (normalizedLines.length === 0) {
+					updateSheet(s.id, {
+						status: "ready",
+						errorMessage: "明細を1行以上、有効な値で入力してください",
+					});
+					continue;
+				}
+				const agg = aggregateLines(
+					normalizedLines.map((l) => ({
+						taxRate: l.taxRate,
+						amountTaxIncl: l.amountTaxIncl,
+					})),
+				);
 				const now = new Date().toISOString();
+				const invoiceNo = v.invoiceRegistrationNo || null;
+				// 親 receipt の accountCategory は表示用代表値として lines の先頭から拾う
+				const primaryCategory = normalizedLines[0].accountCategory;
 				const saved = await saveReceipt(
 					{
 						storeId: skipAssignment
@@ -441,16 +429,12 @@ export function NewReceiptFlow() {
 						status: isManagerSelfFiling ? "manager_approved" : "pending",
 						date: v.date || null,
 						payee: v.payee || null,
-						amount: v.amount ? Math.round(Number(v.amount)) : null,
-						taxAmount: v.taxAmount ? Math.round(Number(v.taxAmount)) : null,
-						taxRateCategory: (v.taxRateCategory || null) as
-							| "8"
-							| "10"
-							| "mixed"
-							| null,
-						accountCategory: v.accountCategory || null,
+						amount: agg.amount,
+						taxAmount: agg.taxAmount,
+						taxRateCategory: agg.taxRateCategory,
+						accountCategory: primaryCategory,
 						description: v.description || null,
-						invoiceRegistrationNo: v.invoiceRegistrationNo || null,
+						invoiceRegistrationNo: invoiceNo,
 						purpose: skipAssignment ? null : v.purpose || null,
 						participants: skipAssignment ? null : v.participants || null,
 						imageUrl: s.imageBase64,
@@ -459,7 +443,26 @@ export function NewReceiptFlow() {
 						isAiVerified: false,
 						managerApprovedBy: isManagerSelfFiling ? actorId : null,
 						managerApprovedAt: isManagerSelfFiling ? now : null,
+						submittedAt: now,
+						expenseType: "petty_cash",
+						invoiceStatus: invoiceNo ? "registered" : "unknown",
+						itemName: v.itemName.trim() || null,
+						imageMetadata: null,
 					},
+					actorId,
+				);
+				// 明細を保存（receipts の集計値は既に保存済みのため再計算は不要だが、
+				// 整合性確保のため replaceReceiptLines 経由で1段階で書き込む）
+				await replaceReceiptLines(
+					saved.id,
+					normalizedLines.map((l, i) => ({
+						lineNo: i + 1,
+						taxRate: l.taxRate,
+						amountTaxIncl: l.amountTaxIncl,
+						accountCategory: l.accountCategory,
+						itemName: l.itemName,
+						invoiceEligible: l.invoiceEligible,
+					})),
 					actorId,
 				);
 				if (s.selectedTagIds.length > 0) {

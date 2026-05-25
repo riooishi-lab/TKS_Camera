@@ -1,6 +1,6 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { NextResponse } from "next/server";
-import type { ReceiptExtraction } from "@/types/receipt";
+import type { ReceiptExtraction, ReceiptExtractionLine } from "@/types/receipt";
 
 const EXTRACTION_PROMPT = `あなたはレシート・領収書の読み取り専門AIです。
 画像からレシート情報を正確に抽出してください。
@@ -15,8 +15,23 @@ const EXTRACTION_PROMPT = `あなたはレシート・領収書の読み取り�
   "accountCategory": "勘定科目の推定（交通費/旅費交通費/交際費/会議費/消耗品費/通信費/福利厚生費/広告宣伝費/外注費/雑費のいずれか。推定不能ならnull）",
   "description": "支出内容の簡潔な説明（推定不能ならnull）",
   "invoiceRegistrationNo": "インボイス登録番号 T+13桁の数字（記載がない場合はnull）",
-  "confidence": 0.0〜1.0の信頼度スコア
-}`;
+  "confidence": 0.0〜1.0の信頼度スコア,
+  "lines": [
+    {
+      "taxRate": 10 または 8 または 0 （税率%、整数）,
+      "amountTaxIncl": 当該明細の税込金額（整数）,
+      "accountCategory": "勘定科目の推定（上記候補から1つ。推定不能なら null）",
+      "itemName": "品目名・商品名（例: 弁当, ボールペン, 文具一式。推定不能なら null）"
+    }
+  ]
+}
+
+【lines の作り方】
+- 単一税率・単一勘定の通常レシート: lines は1件のみ
+- コンビニ等で 8% と 10% が混在: 税率ごとに1件ずつまとめる（最低2件）
+- 同じ税率でも勘定科目が分かれる場合（例: 文具と飲み物）: 勘定科目ごとに分ける
+- 合計の "amount" は lines の amountTaxIncl 合計と必ず一致させる
+- 確実に判定できない明細はまとめてしまってよい`;
 
 export async function POST(request: Request) {
 	try {
@@ -65,11 +80,12 @@ export async function POST(request: Request) {
 			);
 		}
 
-		const extraction: ReceiptExtraction = JSON.parse(jsonMatch[0]);
+		const raw: unknown = JSON.parse(jsonMatch[0]);
+		const extraction = normalizeExtraction(raw);
 
 		return NextResponse.json({
 			extraction,
-			rawResponse: JSON.parse(jsonMatch[0]),
+			rawResponse: raw,
 		});
 	} catch (err) {
 		const raw = err instanceof Error ? err.message : String(err);
@@ -83,4 +99,86 @@ export async function POST(request: Request) {
 		}
 		return NextResponse.json({ error: message }, { status: 500 });
 	}
+}
+
+// AI レスポンスの形を正規化する。
+// lines が無い・空・型崩れ等の場合は、従来のフラットなフィールドから
+// 1行のみの lines を合成して必ず1件以上にする (REQ-RC-01)。
+function normalizeExtraction(raw: unknown): ReceiptExtraction {
+	const r = (raw ?? {}) as Record<string, unknown>;
+	const rawLines = Array.isArray(r.lines) ? (r.lines as unknown[]) : [];
+	const lines: ReceiptExtractionLine[] = rawLines
+		.map((l) => normalizeLine(l))
+		.filter((l): l is ReceiptExtractionLine => l !== null);
+
+	const amount = typeof r.amount === "number" ? r.amount : null;
+	const fallbackCategory =
+		typeof r.accountCategory === "string" ? r.accountCategory : null;
+	const fallbackTaxRate = parseTaxRate(r.taxRateCategory);
+	const fallbackItemName =
+		typeof r.description === "string" ? r.description : null;
+
+	if (lines.length === 0 && amount != null && fallbackTaxRate != null) {
+		// AI が lines を返さなかった旧形式レスポンスへのフォールバック
+		lines.push({
+			taxRate: fallbackTaxRate,
+			amountTaxIncl: amount,
+			accountCategory: fallbackCategory,
+			itemName: fallbackItemName,
+		});
+	}
+
+	return {
+		date: typeof r.date === "string" ? r.date : null,
+		payee: typeof r.payee === "string" ? r.payee : null,
+		amount,
+		taxAmount: typeof r.taxAmount === "number" ? r.taxAmount : null,
+		taxRateCategory: parseTaxRateCategory(r.taxRateCategory),
+		accountCategory: fallbackCategory,
+		description: typeof r.description === "string" ? r.description : null,
+		invoiceRegistrationNo:
+			typeof r.invoiceRegistrationNo === "string"
+				? r.invoiceRegistrationNo
+				: null,
+		confidence: typeof r.confidence === "number" ? r.confidence : 0,
+		lines,
+	};
+}
+
+function normalizeLine(raw: unknown): ReceiptExtractionLine | null {
+	if (!raw || typeof raw !== "object") return null;
+	const l = raw as Record<string, unknown>;
+	const taxRate = parseTaxRate(l.taxRate ?? l.tax_rate);
+	const amountTaxIncl =
+		typeof (l.amountTaxIncl ?? l.amount_tax_incl) === "number"
+			? (l.amountTaxIncl ?? (l.amount_tax_incl as number))
+			: null;
+	if (taxRate == null || amountTaxIncl == null) return null;
+	return {
+		taxRate,
+		amountTaxIncl: amountTaxIncl as number,
+		accountCategory:
+			typeof l.accountCategory === "string"
+				? l.accountCategory
+				: typeof l.account_category === "string"
+					? l.account_category
+					: null,
+		itemName:
+			typeof l.itemName === "string"
+				? l.itemName
+				: typeof l.item_name === "string"
+					? l.item_name
+					: null,
+	};
+}
+
+function parseTaxRate(v: unknown): 0 | 8 | 10 | null {
+	const n = typeof v === "number" ? v : typeof v === "string" ? Number(v) : NaN;
+	if (n === 0 || n === 8 || n === 10) return n;
+	return null;
+}
+
+function parseTaxRateCategory(v: unknown): "8" | "10" | "mixed" | null {
+	if (v === "8" || v === "10" || v === "mixed") return v;
+	return null;
 }
