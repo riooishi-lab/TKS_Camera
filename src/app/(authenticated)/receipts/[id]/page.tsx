@@ -388,6 +388,16 @@ export default function ReceiptDetailPage() {
 							店長立替
 						</Badge>
 					)}
+					{receipt.date &&
+						receipt.submittedAt &&
+						receipt.date.slice(0, 7) !== receipt.submittedAt.slice(0, 7) && (
+							<Badge
+								variant="outline"
+								className="border-orange-400 text-orange-700"
+							>
+								遅延申請
+							</Badge>
+						)}
 				</div>
 				<div className="flex flex-wrap gap-2 pl-12">
 					{canApprove && (

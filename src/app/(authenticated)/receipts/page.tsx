@@ -2,6 +2,7 @@
 
 import { Check, Download, Plus, Settings2 } from "lucide-react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -673,12 +674,15 @@ export default function ReceiptsPage() {
 		new Map(),
 	);
 
+	// レポート画面のピボットセルから初期フィルタを引き継げるようにする。
+	// 例: /receipts?month=2026-05&storeId=xxx でドリルダウン表示。
+	const searchParams = useSearchParams();
 	const [filters, setFilters] = useState<FilterState>({
-		month: "",
-		storeId: "",
-		status: "",
+		month: searchParams.get("month") ?? "",
+		storeId: searchParams.get("storeId") ?? "",
+		status: searchParams.get("status") ?? "",
 		aiVerified: "",
-		expenseType: "",
+		expenseType: searchParams.get("expenseType") ?? "",
 		payeeQuery: "",
 		amountMin: "",
 		amountMax: "",
