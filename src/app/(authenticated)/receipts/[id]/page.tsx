@@ -34,12 +34,14 @@ import { buildApprovalPatch, notifyReceiptEvent } from "@/libs/notifications";
 import {
 	deleteReceipt,
 	getReceipt,
+	getReceiptLines,
 	getStores,
 	getTags,
 	getTagsForReceipt,
 	getUsers,
 	isReceiptEditable,
 	type Receipt,
+	type ReceiptLine,
 	type ReceiptStatus,
 	type Store,
 	type Tag,
@@ -79,6 +81,7 @@ export default function ReceiptDetailPage() {
 	const router = useRouter();
 	const { tksUser } = useAuth();
 	const [receipt, setReceipt] = useState<Receipt | null>(null);
+	const [lines, setLines] = useState<ReceiptLine[]>([]);
 	const [stores, setStores] = useState<Store[]>([]);
 	const [users, setUsers] = useState<TksUser[]>([]);
 	const [tags, setTags] = useState<Tag[]>([]);
@@ -145,6 +148,7 @@ export default function ReceiptDetailPage() {
 		getUsers().then(setUsers);
 		getTags().then(setTags);
 		getTagsForReceipt(params.id).then(setTagIds);
+		getReceiptLines(params.id).then(setLines);
 	}, [params.id, router, tksUser?.id, tksUser?.role, tksUser?.storeId]);
 
 	const receiptTags = tags.filter((t) => tagIds.includes(t.id));
@@ -538,6 +542,56 @@ export default function ReceiptDetailPage() {
 						<DetailRow label="登録日" value={formatDate(receipt.createdAt)} />
 					</CardContent>
 				</Card>
+
+				{lines.length > 0 && (
+					<Card className="lg:col-span-2">
+						<CardHeader>
+							<CardTitle className="text-lg">明細</CardTitle>
+						</CardHeader>
+						<CardContent>
+							<div className="overflow-x-auto rounded-md border">
+								<table className="w-full text-sm">
+									<thead className="bg-muted/50 text-xs text-muted-foreground">
+										<tr>
+											<th className="px-3 py-2 text-left font-medium">#</th>
+											<th className="px-3 py-2 text-left font-medium">税率</th>
+											<th className="px-3 py-2 text-right font-medium">
+												税込金額
+											</th>
+											<th className="px-3 py-2 text-left font-medium">
+												勘定科目
+											</th>
+											<th className="px-3 py-2 text-left font-medium">品目</th>
+											<th className="px-3 py-2 text-center font-medium">
+												インボ
+											</th>
+										</tr>
+									</thead>
+									<tbody>
+										{lines.map((l) => (
+											<tr key={l.id} className="border-t">
+												<td className="px-3 py-2 text-muted-foreground">
+													{l.lineNo}
+												</td>
+												<td className="px-3 py-2">
+													{l.taxRate === 0 ? "非課税" : `${l.taxRate}%`}
+												</td>
+												<td className="px-3 py-2 text-right font-medium tabular-nums">
+													{formatCurrency(l.amountTaxIncl)}
+												</td>
+												<td className="px-3 py-2">{l.accountCategory}</td>
+												<td className="px-3 py-2">{l.itemName ?? "-"}</td>
+												<td className="px-3 py-2 text-center">
+													{l.invoiceEligible ? "○" : "-"}
+												</td>
+											</tr>
+										))}
+									</tbody>
+								</table>
+							</div>
+						</CardContent>
+					</Card>
+				)}
 
 				<Card className="lg:col-span-2">
 					<CardHeader>

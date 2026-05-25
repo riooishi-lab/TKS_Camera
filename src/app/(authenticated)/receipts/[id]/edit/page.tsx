@@ -9,28 +9,29 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { NativeSelect } from "@/components/ui/native-select";
-import {
-	Select,
-	SelectContent,
-	SelectItem,
-	SelectTrigger,
-	SelectValue,
-} from "@/components/ui/select";
-import { ACCOUNT_CATEGORIES } from "@/constants/accountCategories";
 import { PAGE_PATH } from "@/constants/pagePath";
 import { useAuth } from "@/contexts/AuthContext";
+import { aggregateLines } from "@/libs/receipt-aggregation";
 import {
 	getReceipt,
+	getReceiptLines,
 	getStores,
 	getTags,
 	getTagsForReceipt,
 	isReceiptEditable,
 	type Receipt,
+	replaceReceiptLines,
 	type Store,
 	setReceiptTags,
 	type Tag,
 	updateReceipt,
 } from "@/libs/storage";
+import {
+	type DraftLine,
+	emptyDraftLine,
+	normalizeLines,
+	ReceiptLinesEditor,
+} from "../../components/ReceiptLinesEditor";
 import { TagPicker } from "../../components/TagPicker";
 
 export default function EditReceiptPage() {
@@ -42,6 +43,8 @@ export default function EditReceiptPage() {
 	const [allTags, setAllTags] = useState<Tag[]>([]);
 	const [selectedTagIds, setSelectedTagIds] = useState<string[]>([]);
 	const [isSaving, setIsSaving] = useState(false);
+	const [linesDraft, setLinesDraft] = useState<DraftLine[]>([emptyDraftLine()]);
+	const [error, setError] = useState<string | null>(null);
 
 	useEffect(() => {
 		const myUserId = tksUser?.id ?? null;
@@ -70,38 +73,78 @@ export default function EditReceiptPage() {
 		getStores().then(setStores);
 		getTags().then(setAllTags);
 		getTagsForReceipt(params.id).then(setSelectedTagIds);
+		// 既存の明細を読み込む（無ければ空1行）
+		getReceiptLines(params.id).then((lines) => {
+			if (lines.length === 0) {
+				setLinesDraft([emptyDraftLine()]);
+				return;
+			}
+			setLinesDraft(
+				lines.map((l) => ({
+					taxRate: String(l.taxRate) as DraftLine["taxRate"],
+					amountTaxIncl: String(l.amountTaxIncl),
+					accountCategory: l.accountCategory,
+					itemName: l.itemName ?? "",
+					invoiceEligible: l.invoiceEligible,
+				})),
+			);
+		});
 	}, [params.id, router, tksUser?.id, tksUser?.role, tksUser?.storeId]);
 
 	if (!receipt) return null;
 
 	const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
 		e.preventDefault();
+		setError(null);
+		const normalized = normalizeLines(linesDraft);
+		if (normalized.length === 0) {
+			setError("明細を1行以上、有効な値で入力してください");
+			return;
+		}
 		setIsSaving(true);
 		const fd = new FormData(e.currentTarget);
-		const amountStr = fd.get("amount") as string;
-		const taxAmountStr = fd.get("taxAmount") as string;
+		const agg = aggregateLines(
+			normalized.map((l) => ({
+				taxRate: l.taxRate,
+				amountTaxIncl: l.amountTaxIncl,
+			})),
+		);
+		const invoiceNo = (fd.get("invoiceRegistrationNo") as string) || null;
+		const actorId = tksUser?.id ?? null;
 
 		await updateReceipt(
 			params.id,
 			{
 				date: (fd.get("date") as string) || null,
 				payee: (fd.get("payee") as string) || null,
-				amount: amountStr ? Number.parseInt(amountStr, 10) : null,
-				taxAmount: taxAmountStr ? Number.parseInt(taxAmountStr, 10) : null,
-				taxRateCategory:
-					(fd.get("taxRateCategory") as "8" | "10" | "mixed") || null,
-				accountCategory: (fd.get("accountCategory") as string) || null,
+				amount: agg.amount,
+				taxAmount: agg.taxAmount,
+				taxRateCategory: agg.taxRateCategory,
+				accountCategory: normalized[0].accountCategory,
 				description: (fd.get("description") as string) || null,
-				invoiceRegistrationNo:
-					(fd.get("invoiceRegistrationNo") as string) || null,
+				invoiceRegistrationNo: invoiceNo,
+				invoiceStatus: invoiceNo ? "registered" : "unknown",
+				itemName: ((fd.get("itemName") as string) || "").trim() || null,
 				storeId: (fd.get("storeId") as string) || null,
 				purpose: (fd.get("purpose") as string) || null,
 				participants: (fd.get("participants") as string) || null,
 				isAiVerified: true,
 			},
-			tksUser?.id ?? null,
+			actorId,
 		);
-		await setReceiptTags(params.id, selectedTagIds, tksUser?.id ?? null);
+		await replaceReceiptLines(
+			params.id,
+			normalized.map((l, i) => ({
+				lineNo: i + 1,
+				taxRate: l.taxRate,
+				amountTaxIncl: l.amountTaxIncl,
+				accountCategory: l.accountCategory,
+				itemName: l.itemName,
+				invoiceEligible: l.invoiceEligible,
+			})),
+			actorId,
+		);
+		await setReceiptTags(params.id, selectedTagIds, actorId);
 
 		window.location.href = PAGE_PATH.receiptDetail(params.id);
 	};
@@ -161,61 +204,18 @@ export default function EditReceiptPage() {
 									/>
 								</div>
 							</div>
-							<div className="grid gap-4 sm:grid-cols-2">
-								<div className="space-y-2">
-									<Label htmlFor="amount">金額（税込）</Label>
-									<Input
-										id="amount"
-										name="amount"
-										type="number"
-										defaultValue={receipt.amount ?? ""}
-									/>
-								</div>
-								<div className="space-y-2">
-									<Label htmlFor="taxAmount">消費税額</Label>
-									<Input
-										id="taxAmount"
-										name="taxAmount"
-										type="number"
-										defaultValue={receipt.taxAmount ?? ""}
-									/>
-								</div>
-							</div>
-							<div className="grid gap-4 sm:grid-cols-2">
-								<div className="space-y-2">
-									<Label htmlFor="taxRateCategory">税率区分</Label>
-									<Select
-										name="taxRateCategory"
-										defaultValue={receipt.taxRateCategory ?? ""}
-									>
-										<SelectTrigger id="taxRateCategory">
-											<SelectValue placeholder="選択" />
-										</SelectTrigger>
-										<SelectContent>
-											<SelectItem value="10">標準税率 (10%)</SelectItem>
-											<SelectItem value="8">軽減税率 (8%)</SelectItem>
-											<SelectItem value="mixed">混在</SelectItem>
-										</SelectContent>
-									</Select>
-								</div>
-								<div className="space-y-2">
-									<Label htmlFor="accountCategory">勘定科目</Label>
-									<Select
-										name="accountCategory"
-										defaultValue={receipt.accountCategory ?? ""}
-									>
-										<SelectTrigger id="accountCategory">
-											<SelectValue placeholder="選択" />
-										</SelectTrigger>
-										<SelectContent>
-											{ACCOUNT_CATEGORIES.map((c) => (
-												<SelectItem key={c.value} value={c.value}>
-													{c.label}
-												</SelectItem>
-											))}
-										</SelectContent>
-									</Select>
-								</div>
+
+							{/* Phase 5: 税率・勘定科目混在に対応した明細編集 */}
+							<ReceiptLinesEditor value={linesDraft} onChange={setLinesDraft} />
+
+							<div className="space-y-2">
+								<Label htmlFor="itemName">品目（一覧用代表値）</Label>
+								<Input
+									id="itemName"
+									name="itemName"
+									defaultValue={receipt.itemName ?? ""}
+									placeholder="例: 文具一式・お茶"
+								/>
 							</div>
 							<div className="space-y-2">
 								<Label htmlFor="description">摘要・説明</Label>
@@ -274,6 +274,7 @@ export default function EditReceiptPage() {
 									onChange={setSelectedTagIds}
 								/>
 							</div>
+							{error && <p className="text-sm text-destructive">{error}</p>}
 							<Button type="submit" className="w-full" disabled={isSaving}>
 								{isSaving ? "更新中..." : "更新する"}
 							</Button>

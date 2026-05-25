@@ -39,6 +39,7 @@ import { TagBadges } from "./components/TagPicker";
 type ColumnKey =
 	| "date"
 	| "payee"
+	| "itemName"
 	| "amount"
 	| "accountCategory"
 	| "store"
@@ -62,6 +63,7 @@ type ColumnDef = {
 const ALL_COLUMNS: ColumnDef[] = [
 	{ key: "date", label: "日付", defaultVisible: true, alwaysVisible: true },
 	{ key: "payee", label: "支払先", defaultVisible: true, alwaysVisible: true },
+	{ key: "itemName", label: "品目", defaultVisible: true },
 	{ key: "amount", label: "金額", defaultVisible: true, align: "right" },
 	{ key: "accountCategory", label: "勘定科目", defaultVisible: true },
 	{ key: "store", label: "店舗", defaultVisible: true },
@@ -147,6 +149,8 @@ function CellValue({
 					{receipt.payee ?? "未設定"}
 				</Link>
 			);
+		case "itemName":
+			return receipt.itemName ?? "-";
 		case "amount":
 			return receipt.amount != null ? formatCurrency(receipt.amount) : "-";
 		case "taxAmount":
@@ -579,12 +583,14 @@ function exportReceiptsToCsv(params: {
 	const header = [
 		"日付",
 		"支払先",
+		"品目",
 		"金額(税込)",
 		"消費税額",
 		"税率区分",
 		"勘定科目",
 		"摘要",
 		"インボイス登録番号",
+		"インボイス区分",
 		"目的",
 		"参加者",
 		"店舗",
@@ -592,6 +598,8 @@ function exportReceiptsToCsv(params: {
 		"タグ",
 		"AI検証",
 		"状態",
+		"申請区分",
+		"申請登録日",
 		"登録日時",
 	];
 	const body = receipts.map((r) => {
@@ -602,12 +610,14 @@ function exportReceiptsToCsv(params: {
 		return [
 			r.date ?? "",
 			r.payee ?? "",
+			r.itemName ?? "",
 			r.amount ?? "",
 			r.taxAmount ?? "",
 			r.taxRateCategory ?? "",
 			r.accountCategory ?? "",
 			r.description ?? "",
 			r.invoiceRegistrationNo ?? "",
+			r.invoiceStatus,
 			r.purpose ?? "",
 			r.participants ?? "",
 			r.storeId ? (storeMap.get(r.storeId) ?? "") : "",
@@ -619,6 +629,8 @@ function exportReceiptsToCsv(params: {
 			tagNames,
 			r.isAiVerified ? "検証済" : "未検証",
 			STATUS_LABELS[r.status],
+			r.expenseType,
+			r.submittedAt ?? "",
 			r.createdAt,
 		];
 	});

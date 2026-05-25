@@ -35,6 +35,9 @@ export type ReceiptStatus =
 	| "paid"
 	| "rejected";
 
+export type ExpenseType = "petty_cash" | "personal";
+export type InvoiceStatus = "registered" | "unregistered" | "unknown";
+
 export type Receipt = {
 	id: string;
 	storeId: string | null;
@@ -66,6 +69,34 @@ export type Receipt = {
 	updatedBy: string | null;
 	createdAt: string;
 	updatedAt: string;
+	// Phase 5
+	submittedAt: string | null;
+	expenseType: ExpenseType;
+	invoiceStatus: InvoiceStatus;
+	itemName: string | null;
+	imageMetadata: Record<string, unknown> | null;
+};
+
+// Phase 5: レシート明細（税率混在・複数勘定科目に対応）
+export type ReceiptLine = {
+	id: string;
+	receiptId: string;
+	lineNo: number;
+	taxRate: 0 | 8 | 10;
+	amountTaxIncl: number;
+	accountCategory: string;
+	itemName: string | null;
+	invoiceEligible: boolean;
+	createdAt: string;
+};
+
+export type ReceiptLineInput = {
+	lineNo: number;
+	taxRate: 0 | 8 | 10;
+	amountTaxIncl: number;
+	accountCategory: string;
+	itemName: string | null;
+	invoiceEligible: boolean;
 };
 
 export type CashDeposit = {
@@ -241,6 +272,11 @@ export async function saveReceipt(
 			is_ai_verified: input.isAiVerified,
 			manager_approved_by: input.managerApprovedBy,
 			manager_approved_at: input.managerApprovedAt,
+			submitted_at: input.submittedAt,
+			expense_type: input.expenseType,
+			invoice_status: input.invoiceStatus,
+			item_name: input.itemName,
+			image_metadata: input.imageMetadata,
 			created_by: actorUserId ?? null,
 			updated_by: actorUserId ?? null,
 		})
@@ -299,6 +335,13 @@ export async function updateReceipt(
 		row.rejection_reason = input.rejectionReason;
 	if (input.paidBy !== undefined) row.paid_by = input.paidBy;
 	if (input.paidAt !== undefined) row.paid_at = input.paidAt;
+	if (input.submittedAt !== undefined) row.submitted_at = input.submittedAt;
+	if (input.expenseType !== undefined) row.expense_type = input.expenseType;
+	if (input.invoiceStatus !== undefined)
+		row.invoice_status = input.invoiceStatus;
+	if (input.itemName !== undefined) row.item_name = input.itemName;
+	if (input.imageMetadata !== undefined)
+		row.image_metadata = input.imageMetadata;
 
 	let query = getSupabase().from("tks_receipts").update(row).eq("id", id);
 	if (expectedStatus !== undefined) {
@@ -385,6 +428,11 @@ function mapReceipt(r: Record<string, unknown>): Receipt {
 		updatedBy: (r.updated_by as string | null) ?? null,
 		createdAt: r.created_at as string,
 		updatedAt: r.updated_at as string,
+		submittedAt: (r.submitted_at as string | null) ?? null,
+		expenseType: (r.expense_type as ExpenseType) ?? "petty_cash",
+		invoiceStatus: (r.invoice_status as InvoiceStatus) ?? "unknown",
+		itemName: (r.item_name as string | null) ?? null,
+		imageMetadata: (r.image_metadata as Record<string, unknown> | null) ?? null,
 	};
 }
 
@@ -411,6 +459,10 @@ const AUDITED_RECEIPT_FIELDS: (keyof Receipt)[] = [
 	"rejectionReason",
 	"paidBy",
 	"paidAt",
+	"submittedAt",
+	"expenseType",
+	"invoiceStatus",
+	"itemName",
 ];
 
 function stripReceiptForAudit(r: Receipt): Record<string, unknown> {
@@ -431,6 +483,85 @@ function buildReceiptDiff(
 		}
 	}
 	return diff;
+}
+
+// ===== Receipt Lines (Phase 5) =====
+
+export async function getReceiptLines(
+	receiptId: string,
+): Promise<ReceiptLine[]> {
+	const { data, error } = await getSupabase()
+		.from("tks_receipt_lines")
+		.select("*")
+		.eq("receipt_id", receiptId)
+		.order("line_no", { ascending: true });
+	if (error) console.error("getReceiptLines:", error.message);
+	return (data ?? []).map(mapReceiptLine);
+}
+
+// 親レシートの明細を全て置き換える。
+// lines が変わると receipts 側の amount/taxAmount/taxRateCategory も
+// 再計算して保存するため、呼び出し側は集計値の整合性を意識しなくてよい。
+// REQ-RC-04: 明細変更時の親集計再計算。
+export async function replaceReceiptLines(
+	receiptId: string,
+	lines: ReceiptLineInput[],
+	actorUserId?: string | null,
+): Promise<ReceiptLine[]> {
+	const supabase = getSupabase();
+	const { error: delError } = await supabase
+		.from("tks_receipt_lines")
+		.delete()
+		.eq("receipt_id", receiptId);
+	if (delError) throw new Error(delError.message);
+	if (lines.length === 0) {
+		throw new Error("replaceReceiptLines: 明細は1件以上必要です (REQ-RC-01)");
+	}
+	const { data, error } = await supabase
+		.from("tks_receipt_lines")
+		.insert(
+			lines.map((l) => ({
+				receipt_id: receiptId,
+				line_no: l.lineNo,
+				tax_rate: l.taxRate,
+				amount_tax_incl: l.amountTaxIncl,
+				account_category: l.accountCategory,
+				item_name: l.itemName,
+				invoice_eligible: l.invoiceEligible,
+			})),
+		)
+		.select();
+	if (error) throw new Error(error.message);
+	const mapped = (data ?? []).map(mapReceiptLine);
+	// 親 receipt の集計値を再計算して反映する
+	const { aggregateLines } = await import("./receipt-aggregation");
+	const agg = aggregateLines(
+		mapped.map((l) => ({ taxRate: l.taxRate, amountTaxIncl: l.amountTaxIncl })),
+	);
+	await updateReceipt(
+		receiptId,
+		{
+			amount: agg.amount,
+			taxAmount: agg.taxAmount,
+			taxRateCategory: agg.taxRateCategory,
+		},
+		actorUserId,
+	);
+	return mapped;
+}
+
+function mapReceiptLine(r: Record<string, unknown>): ReceiptLine {
+	return {
+		id: r.id as string,
+		receiptId: r.receipt_id as string,
+		lineNo: r.line_no as number,
+		taxRate: r.tax_rate as 0 | 8 | 10,
+		amountTaxIncl: r.amount_tax_incl as number,
+		accountCategory: r.account_category as string,
+		itemName: (r.item_name as string | null) ?? null,
+		invoiceEligible: r.invoice_eligible as boolean,
+		createdAt: r.created_at as string,
+	};
 }
 
 // ===== Users =====
