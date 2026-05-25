@@ -1,10 +1,19 @@
 "use client";
 
-import { AlertCircle, Clock, FileWarning, Wallet } from "lucide-react";
+import {
+	AlertCircle,
+	Clock,
+	Download,
+	FileWarning,
+	Wallet,
+} from "lucide-react";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Label } from "@/components/ui/label";
+import { NativeSelect } from "@/components/ui/native-select";
 import {
 	Table,
 	TableBody,
@@ -13,16 +22,24 @@ import {
 	TableHeader,
 	TableRow,
 } from "@/components/ui/table";
+import { FEATURE_FLAGS } from "@/constants/featureFlags";
 import { PAGE_PATH } from "@/constants/pagePath";
 import { useAuth } from "@/contexts/AuthContext";
 import {
+	buildAccountingCsvRows,
+	buildExportFilename,
+} from "@/libs/accounting-csv";
+import {
 	type CashReplenishmentRequest,
+	getReceiptLinesAll,
 	getReceipts,
 	getReplenishmentRequests,
 	getStores,
 	type Receipt,
+	type ReceiptLine,
 	type Store,
 } from "@/libs/storage";
+import { downloadCsv, toCsv } from "@/utils/csv";
 import { formatCurrency } from "@/utils/formatCurrency";
 
 function getYearMonth(date: string): string {
@@ -195,22 +212,32 @@ export default function ReportsPage() {
 	const { tksUser } = useAuth();
 	const [receipts, setReceipts] = useState<Receipt[]>([]);
 	const [stores, setStores] = useState<Store[]>([]);
+	const [lines, setLines] = useState<ReceiptLine[]>([]);
 	const [replenishments, setReplenishments] = useState<
 		CashReplenishmentRequest[]
 	>([]);
 	const [filterYear, setFilterYear] = useState("");
 
+	// CSV エクスポート用フィルタ
+	const [csvMonth, setCsvMonth] = useState("");
+	const [csvStoreId, setCsvStoreId] = useState("");
+
 	const role = tksUser?.role;
 	const isStoreManager = role === "store_manager";
+	const canExportCsv = role === "hq_accountant" && FEATURE_FLAGS.accountingCsv;
 
 	useEffect(() => {
-		Promise.all([getReceipts(), getStores(), getReplenishmentRequests()]).then(
-			([r, s, rp]) => {
-				setReceipts(r);
-				setStores(s);
-				setReplenishments(rp);
-			},
-		);
+		Promise.all([
+			getReceipts(),
+			getStores(),
+			getReplenishmentRequests(),
+			getReceiptLinesAll(),
+		]).then(([r, s, rp, l]) => {
+			setReceipts(r);
+			setStores(s);
+			setReplenishments(rp);
+			setLines(l);
+		});
 	}, []);
 
 	// store_manager は自店舗のみに絞る (REQ-RPT-03)
@@ -480,6 +507,79 @@ export default function ReportsPage() {
 			<p className="mt-6 text-xs text-muted-foreground">
 				税額合計: {formatCurrency(totalTax)}
 			</p>
+
+			{/* 会計CSV出力 (Phase 5 Step6, REQ-CSV-01〜06) */}
+			{canExportCsv && (
+				<Card className="mt-6">
+					<CardHeader>
+						<CardTitle className="text-base">
+							会計ソフト向け CSV 出力（β）
+						</CardTitle>
+					</CardHeader>
+					<CardContent className="space-y-3">
+						<p className="text-xs text-muted-foreground">
+							経理承認済み・支払済のレシートを line items 単位で展開します。
+							勘定奉行の正式フォーマットは顧客確認中のため、列構成は β
+							仕様（暫定）です。
+						</p>
+						<div className="flex flex-wrap items-end gap-3">
+							<div className="space-y-1">
+								<Label htmlFor="csv-month" className="text-xs">
+									対象月（任意）
+								</Label>
+								<input
+									id="csv-month"
+									type="month"
+									value={csvMonth}
+									onChange={(e) => setCsvMonth(e.target.value)}
+									className="h-8 rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none focus-visible:border-ring"
+								/>
+							</div>
+							<div className="space-y-1">
+								<Label htmlFor="csv-store" className="text-xs">
+									店舗（任意）
+								</Label>
+								<NativeSelect
+									id="csv-store"
+									value={csvStoreId}
+									onChange={(e) => setCsvStoreId(e.target.value)}
+									placeholder="全店舗"
+									options={stores.map((s) => ({
+										value: s.id,
+										label: s.name,
+									}))}
+								/>
+							</div>
+							<Button
+								onClick={() => {
+									const csvRows = buildAccountingCsvRows(
+										{ receipts, lines, stores },
+										{
+											month: csvMonth || undefined,
+											storeId: csvStoreId || undefined,
+										},
+									);
+									if (csvRows.length <= 1) {
+										alert("出力対象のレシートがありません");
+										return;
+									}
+									const storeName = csvStoreId
+										? stores.find((s) => s.id === csvStoreId)?.name
+										: undefined;
+									const filename = buildExportFilename({
+										month: csvMonth || undefined,
+										storeName,
+									});
+									downloadCsv(filename, toCsv(csvRows));
+								}}
+							>
+								<Download className="mr-1.5 h-4 w-4" />
+								CSV ダウンロード
+							</Button>
+						</div>
+					</CardContent>
+				</Card>
+			)}
 		</div>
 	);
 }

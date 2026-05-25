@@ -504,6 +504,17 @@ export async function getReceiptLines(
 	return (data ?? []).map(mapReceiptLine);
 }
 
+// 全レシートの明細を1クエリで取得する。
+// レポート/CSVエクスポートなど、receipts と lines を JOIN したい場面で使う。
+export async function getReceiptLinesAll(): Promise<ReceiptLine[]> {
+	const { data, error } = await getSupabase()
+		.from("tks_receipt_lines")
+		.select("*")
+		.order("line_no", { ascending: true });
+	if (error) console.error("getReceiptLinesAll:", error.message);
+	return (data ?? []).map(mapReceiptLine);
+}
+
 // 親レシートの明細を全て置き換える。
 // lines が変わると receipts 側の amount/taxAmount/taxRateCategory も
 // 再計算して保存するため、呼び出し側は集計値の整合性を意識しなくてよい。
