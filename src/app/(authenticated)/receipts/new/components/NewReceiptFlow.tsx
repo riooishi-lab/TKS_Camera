@@ -21,6 +21,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { notifyReceiptEvent } from "@/libs/notifications";
 import { aggregateLines } from "@/libs/receipt-aggregation";
 import {
+	type ExpenseType,
 	fileToBase64,
 	findDuplicateReceipts,
 	getStores,
@@ -77,6 +78,7 @@ type FormValues = {
 	storeId: string;
 	purpose: string;
 	participants: string;
+	expenseType: ExpenseType;
 	lines: DraftLine[];
 };
 
@@ -90,6 +92,7 @@ function emptyForm(storeId = ""): FormValues {
 		storeId,
 		purpose: "",
 		participants: "",
+		expenseType: "petty_cash",
 		lines: [emptyDraftLine()],
 	};
 }
@@ -129,15 +132,38 @@ function ReceiptFormFields({
 	values,
 	onChange,
 	stores,
+	canFilePersonal,
 }: {
 	values: FormValues;
 	onChange: (next: FormValues) => void;
 	stores: Store[];
+	canFilePersonal: boolean;
 }) {
 	const set = <K extends keyof FormValues>(key: K, v: FormValues[K]) =>
 		onChange({ ...values, [key]: v });
+	const isPersonal = values.expenseType === "personal";
 	return (
 		<div className="space-y-4">
+			{/* Phase 5: 申請区分。店長(store_manager) のみ立替経費を選択可能 */}
+			{canFilePersonal && (
+				<div className="space-y-2">
+					<Label>申請区分</Label>
+					<NativeSelect
+						value={values.expenseType}
+						onChange={(e) => set("expenseType", e.target.value as ExpenseType)}
+						options={[
+							{ value: "petty_cash", label: "小口現金（店舗の経費）" },
+							{ value: "personal", label: "店長立替（給与同時振込）" },
+						]}
+					/>
+					{isPersonal && (
+						<p className="text-xs text-muted-foreground">
+							立替経費は給与同時振込で支給されます。目的と参加者は必須項目です。
+						</p>
+					)}
+				</div>
+			)}
+
 			<div className="grid gap-4 sm:grid-cols-2">
 				<div className="space-y-2">
 					<Label>日付</Label>
@@ -196,19 +222,25 @@ function ReceiptFormFields({
 				/>
 			</div>
 			<div className="space-y-2">
-				<Label>目的</Label>
+				<Label>
+					目的{isPersonal && <span className="ml-1 text-destructive">*</span>}
+				</Label>
 				<Input
 					value={values.purpose}
 					onChange={(e) => set("purpose", e.target.value)}
 					placeholder="例: 顧客接待・社内会議など"
+					required={isPersonal}
 				/>
 			</div>
 			<div className="space-y-2">
-				<Label>参加者</Label>
+				<Label>
+					参加者{isPersonal && <span className="ml-1 text-destructive">*</span>}
+				</Label>
 				<Input
 					value={values.participants}
 					onChange={(e) => set("participants", e.target.value)}
 					placeholder="例: 山田太郎、田中花子"
+					required={isPersonal}
 				/>
 			</div>
 		</div>
@@ -411,6 +443,25 @@ export function NewReceiptFlow() {
 					});
 					continue;
 				}
+				// 立替経費は目的・参加者が必須 (REQ-PE-03)
+				if (
+					v.expenseType === "personal" &&
+					(!v.purpose.trim() || !v.participants.trim())
+				) {
+					updateSheet(s.id, {
+						status: "ready",
+						errorMessage: "立替経費(personal)は「目的」と「参加者」が必須です",
+					});
+					continue;
+				}
+				// 立替経費は店長のみ起票可能 (REQ-PE-02)
+				if (v.expenseType === "personal" && !isManagerSelfFiling) {
+					updateSheet(s.id, {
+						status: "ready",
+						errorMessage: "立替経費は店長のみ起票できます",
+					});
+					continue;
+				}
 				const agg = aggregateLines(
 					normalizedLines.map((l) => ({
 						taxRate: l.taxRate,
@@ -444,7 +495,7 @@ export function NewReceiptFlow() {
 						managerApprovedBy: isManagerSelfFiling ? actorId : null,
 						managerApprovedAt: isManagerSelfFiling ? now : null,
 						submittedAt: now,
-						expenseType: "petty_cash",
+						expenseType: v.expenseType,
 						invoiceStatus: invoiceNo ? "registered" : "unknown",
 						itemName: v.itemName.trim() || null,
 						imageMetadata: null,
@@ -587,6 +638,7 @@ export function NewReceiptFlow() {
 								values={sheet.formValues}
 								onChange={(v) => updateSheet(sheet.id, { formValues: v })}
 								stores={stores}
+								canFilePersonal={tksUser?.role === "store_manager"}
 							/>
 							<div className="space-y-2">
 								<Label>タグ</Label>
