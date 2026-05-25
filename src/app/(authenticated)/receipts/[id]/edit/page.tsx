@@ -13,6 +13,7 @@ import { PAGE_PATH } from "@/constants/pagePath";
 import { useAuth } from "@/contexts/AuthContext";
 import { aggregateLines } from "@/libs/receipt-aggregation";
 import {
+	type ExpenseType,
 	getReceipt,
 	getReceiptLines,
 	getStores,
@@ -44,6 +45,7 @@ export default function EditReceiptPage() {
 	const [selectedTagIds, setSelectedTagIds] = useState<string[]>([]);
 	const [isSaving, setIsSaving] = useState(false);
 	const [linesDraft, setLinesDraft] = useState<DraftLine[]>([emptyDraftLine()]);
+	const [expenseType, setExpenseType] = useState<ExpenseType>("petty_cash");
 	const [error, setError] = useState<string | null>(null);
 
 	useEffect(() => {
@@ -69,6 +71,7 @@ export default function EditReceiptPage() {
 				return;
 			}
 			setReceipt(r);
+			setExpenseType(r.expenseType);
 		});
 		getStores().then(setStores);
 		getTags().then(setAllTags);
@@ -101,6 +104,16 @@ export default function EditReceiptPage() {
 			setError("明細を1行以上、有効な値で入力してください");
 			return;
 		}
+		const fdRaw = new FormData(e.currentTarget);
+		const purposeVal = ((fdRaw.get("purpose") as string) || "").trim();
+		const participantsVal = (
+			(fdRaw.get("participants") as string) || ""
+		).trim();
+		// 立替経費は目的・参加者が必須 (REQ-PE-03)
+		if (expenseType === "personal" && (!purposeVal || !participantsVal)) {
+			setError("立替経費(personal)は「目的」と「参加者」が必須です");
+			return;
+		}
 		setIsSaving(true);
 		const fd = new FormData(e.currentTarget);
 		const agg = aggregateLines(
@@ -126,8 +139,9 @@ export default function EditReceiptPage() {
 				invoiceStatus: invoiceNo ? "registered" : "unknown",
 				itemName: ((fd.get("itemName") as string) || "").trim() || null,
 				storeId: (fd.get("storeId") as string) || null,
-				purpose: (fd.get("purpose") as string) || null,
-				participants: (fd.get("participants") as string) || null,
+				purpose: purposeVal || null,
+				participants: participantsVal || null,
+				expenseType,
 				isAiVerified: true,
 			},
 			actorId,
@@ -185,6 +199,35 @@ export default function EditReceiptPage() {
 					</CardHeader>
 					<CardContent>
 						<form onSubmit={handleSubmit} className="space-y-4">
+							{/* Phase 5: 申請区分（店長のみ立替経費を選択可） */}
+							{tksUser?.role === "store_manager" && (
+								<div className="space-y-2">
+									<Label htmlFor="expenseType">申請区分</Label>
+									<NativeSelect
+										id="expenseType"
+										value={expenseType}
+										onChange={(e) =>
+											setExpenseType(e.target.value as ExpenseType)
+										}
+										options={[
+											{
+												value: "petty_cash",
+												label: "小口現金（店舗の経費）",
+											},
+											{
+												value: "personal",
+												label: "店長立替（給与同時振込）",
+											},
+										]}
+									/>
+									{expenseType === "personal" && (
+										<p className="text-xs text-muted-foreground">
+											立替経費は給与同時振込で支給されます。目的と参加者は必須項目です。
+										</p>
+									)}
+								</div>
+							)}
+
 							<div className="grid gap-4 sm:grid-cols-2">
 								<div className="space-y-2">
 									<Label htmlFor="date">日付</Label>
@@ -249,21 +292,33 @@ export default function EditReceiptPage() {
 								/>
 							</div>
 							<div className="space-y-2">
-								<Label htmlFor="purpose">目的</Label>
+								<Label htmlFor="purpose">
+									目的
+									{expenseType === "personal" && (
+										<span className="ml-1 text-destructive">*</span>
+									)}
+								</Label>
 								<Input
 									id="purpose"
 									name="purpose"
 									defaultValue={receipt.purpose ?? ""}
 									placeholder="例: 顧客接待・社内会議など"
+									required={expenseType === "personal"}
 								/>
 							</div>
 							<div className="space-y-2">
-								<Label htmlFor="participants">参加者</Label>
+								<Label htmlFor="participants">
+									参加者
+									{expenseType === "personal" && (
+										<span className="ml-1 text-destructive">*</span>
+									)}
+								</Label>
 								<Input
 									id="participants"
 									name="participants"
 									defaultValue={receipt.participants ?? ""}
 									placeholder="例: 山田太郎、田中花子"
+									required={expenseType === "personal"}
 								/>
 							</div>
 							<div className="space-y-2">

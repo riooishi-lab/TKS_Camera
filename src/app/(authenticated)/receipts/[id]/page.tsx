@@ -380,6 +380,14 @@ export default function ReceiptDetailPage() {
 					<Badge variant={STATUS_VARIANTS[receipt.status]}>
 						{STATUS_LABELS[receipt.status]}
 					</Badge>
+					{receipt.expenseType === "personal" && (
+						<Badge
+							variant="outline"
+							className="border-amber-400 text-amber-700"
+						>
+							店長立替
+						</Badge>
+					)}
 				</div>
 				<div className="flex flex-wrap gap-2 pl-12">
 					{canApprove && (
@@ -411,7 +419,9 @@ export default function ReceiptDetailPage() {
 							className="bg-blue-600 hover:bg-blue-700"
 						>
 							<Banknote className="mr-1.5 h-4 w-4" />
-							支払済にする
+							{receipt.expenseType === "personal"
+								? "給与振込で支給済にする"
+								: "支払済にする"}
 						</Button>
 					)}
 					{canRevert && (
@@ -530,6 +540,14 @@ export default function ReceiptDetailPage() {
 						<Separator />
 						<DetailRow label="店舗" value={storeName} />
 						<DetailRow label="申請者" value={applicantName} />
+						<DetailRow
+							label="申請区分"
+							value={
+								receipt.expenseType === "personal"
+									? "店長立替（給与同時振込）"
+									: "小口現金"
+							}
+						/>
 						<DetailRow label="目的" value={receipt.purpose} />
 						<DetailRow label="参加者" value={receipt.participants} />
 						<Separator />

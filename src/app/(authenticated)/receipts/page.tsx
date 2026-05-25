@@ -50,6 +50,7 @@ type ColumnKey =
 	| "taxAmount"
 	| "tags"
 	| "aiVerified"
+	| "expenseType"
 	| "status";
 
 type ColumnDef = {
@@ -74,6 +75,7 @@ const ALL_COLUMNS: ColumnDef[] = [
 	{ key: "taxAmount", label: "税額", defaultVisible: false, align: "right" },
 	{ key: "tags", label: "タグ", defaultVisible: false },
 	{ key: "aiVerified", label: "AI検証", defaultVisible: false },
+	{ key: "expenseType", label: "区分", defaultVisible: false },
 	{ key: "status", label: "状態", defaultVisible: true },
 ];
 
@@ -183,6 +185,14 @@ function CellValue({
 			) : (
 				<Badge variant="outline">未検証</Badge>
 			);
+		case "expenseType":
+			return receipt.expenseType === "personal" ? (
+				<Badge variant="outline" className="border-amber-400 text-amber-700">
+					立替
+				</Badge>
+			) : (
+				<span className="text-xs text-muted-foreground">小口</span>
+			);
 		case "status":
 			return (
 				<Badge variant={STATUS_VARIANTS[receipt.status]}>
@@ -258,6 +268,7 @@ type FilterState = {
 	storeId: string;
 	status: string;
 	aiVerified: string;
+	expenseType: string;
 	payeeQuery: string;
 	amountMin: string;
 	amountMax: string;
@@ -282,6 +293,7 @@ function FilterBar({
 		filters.storeId ||
 		filters.status ||
 		filters.aiVerified ||
+		filters.expenseType ||
 		filters.payeeQuery ||
 		filters.amountMin ||
 		filters.amountMax ||
@@ -342,6 +354,15 @@ function FilterBar({
 						{ value: "verified", label: "検証済み" },
 					]}
 				/>
+				<FilterSelect
+					value={filters.expenseType}
+					onChange={(v) => setFilters((p) => ({ ...p, expenseType: v }))}
+					placeholder="全区分"
+					options={[
+						{ value: "petty_cash", label: "小口現金" },
+						{ value: "personal", label: "店長立替" },
+					]}
+				/>
 				<Input
 					placeholder="支払先で検索"
 					value={filters.payeeQuery}
@@ -378,6 +399,7 @@ function FilterBar({
 								storeId: "",
 								status: "",
 								aiVerified: "",
+								expenseType: "",
 								payeeQuery: "",
 								amountMin: "",
 								amountMax: "",
@@ -656,6 +678,7 @@ export default function ReceiptsPage() {
 		storeId: "",
 		status: "",
 		aiVerified: "",
+		expenseType: "",
 		payeeQuery: "",
 		amountMin: "",
 		amountMax: "",
@@ -741,6 +764,8 @@ export default function ReceiptsPage() {
 			if (filters.status && r.status !== filters.status) return false;
 			if (filters.aiVerified === "unverified" && r.isAiVerified) return false;
 			if (filters.aiVerified === "verified" && !r.isAiVerified) return false;
+			if (filters.expenseType && r.expenseType !== filters.expenseType)
+				return false;
 			if (q && !(r.payee ?? "").toLowerCase().includes(q)) return false;
 			if (min != null && (r.amount ?? 0) < min) return false;
 			if (max != null && (r.amount ?? 0) > max) return false;
@@ -767,6 +792,7 @@ export default function ReceiptsPage() {
 		filters.storeId ||
 		filters.status ||
 		filters.aiVerified ||
+		filters.expenseType ||
 		filters.payeeQuery ||
 		filters.amountMin ||
 		filters.amountMax ||

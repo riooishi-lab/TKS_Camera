@@ -96,11 +96,15 @@ function buildMessage(
 	receipt: Receipt,
 ): { type: NotificationType; title: string; body: string } {
 	const label = receiptLabel(receipt);
+	// Phase 5: 立替経費(personal) は給与同時振込で支給されるため文言を差し替え
+	const isPersonal = receipt.expenseType === "personal";
 	switch (event) {
 		case "submitted":
 			return {
 				type: "receipt_submitted",
-				title: "新しいレシートが申請されました",
+				title: isPersonal
+					? "新しい立替経費が申請されました"
+					: "新しいレシートが申請されました",
 				body: `${label} の承認をお願いします。`,
 			};
 		case "resubmitted":
@@ -118,8 +122,12 @@ function buildMessage(
 		case "accountant_approved":
 			return {
 				type: "receipt_approved",
-				title: "レシートが経理承認されました",
-				body: `${label} の経理承認が完了しました。まもなく支払処理が行われます。`,
+				title: isPersonal
+					? "立替経費が経理承認されました"
+					: "レシートが経理承認されました",
+				body: isPersonal
+					? `${label} の経理承認が完了しました。給与同時振込で支給予定です。`
+					: `${label} の経理承認が完了しました。まもなく支払処理が行われます。`,
 			};
 		case "rejected":
 			return {
@@ -132,8 +140,12 @@ function buildMessage(
 		case "paid":
 			return {
 				type: "receipt_paid",
-				title: "レシートが支払済みになりました",
-				body: `${label} の精算が完了しました。`,
+				title: isPersonal
+					? "立替経費が給与振込で支給されました"
+					: "レシートが支払済みになりました",
+				body: isPersonal
+					? `${label} の立替分は給与振込で支給されました。`
+					: `${label} の精算が完了しました。`,
 			};
 	}
 }
