@@ -134,7 +134,12 @@ export type NotificationType =
 	| "receipt_approved"
 	| "receipt_fully_approved"
 	| "receipt_rejected"
-	| "receipt_paid";
+	| "receipt_paid"
+	// Phase 5: 補充申請
+	| "replenishment_submitted"
+	| "replenishment_approved"
+	| "replenishment_rejected"
+	| "replenishment_fulfilled";
 
 export type AppNotification = {
 	id: string;
@@ -945,6 +950,221 @@ function mapCashDeposit(d: Record<string, unknown>): CashDeposit {
 		description: (d.description as string | null) ?? null,
 		createdBy: (d.created_by as string | null) ?? null,
 		createdAt: d.created_at as string,
+	};
+}
+
+// ===== Cash Replenishment Requests (Phase 5) =====
+
+export type ReplenishmentStatus =
+	| "pending"
+	| "approved"
+	| "rejected"
+	| "fulfilled";
+
+export type CashReplenishmentRequest = {
+	id: string;
+	storeId: string;
+	targetMonth: string; // 月初日 (YYYY-MM-01)
+	requestedAmount: number;
+	reason: string | null;
+	status: ReplenishmentStatus;
+	requestedBy: string | null;
+	requestedAt: string;
+	approvedBy: string | null;
+	approvedAt: string | null;
+	fulfilledDepositId: string | null;
+	rejectionReason: string | null;
+	createdAt: string;
+};
+
+export async function getReplenishmentRequests(): Promise<
+	CashReplenishmentRequest[]
+> {
+	const { data, error } = await getSupabase()
+		.from("tks_cash_replenishment_requests")
+		.select("*")
+		.order("requested_at", { ascending: false });
+	if (error) console.error("getReplenishmentRequests:", error.message);
+	return (data ?? []).map(mapReplenishment);
+}
+
+export async function getReplenishmentRequest(
+	id: string,
+): Promise<CashReplenishmentRequest | null> {
+	const { data } = await getSupabase()
+		.from("tks_cash_replenishment_requests")
+		.select("*")
+		.eq("id", id)
+		.maybeSingle();
+	return data ? mapReplenishment(data) : null;
+}
+
+export async function createReplenishmentRequest(input: {
+	storeId: string;
+	targetMonth: string; // 'YYYY-MM' or 'YYYY-MM-DD' をどちらも受ける
+	requestedAmount: number;
+	reason: string | null;
+	requestedBy: string | null;
+}): Promise<CashReplenishmentRequest> {
+	// targetMonth は必ず月初日に正規化（'YYYY-MM' → 'YYYY-MM-01'）
+	const month =
+		input.targetMonth.length === 7
+			? `${input.targetMonth}-01`
+			: input.targetMonth;
+	const { data, error } = await getSupabase()
+		.from("tks_cash_replenishment_requests")
+		.insert({
+			store_id: input.storeId,
+			target_month: month,
+			requested_amount: input.requestedAmount,
+			reason: input.reason,
+			requested_by: input.requestedBy,
+		})
+		.select()
+		.single();
+	if (error) throw new Error(error.message);
+	const mapped = mapReplenishment(data);
+	await writeAuditLog(
+		"replenishment_request",
+		mapped.id,
+		"create",
+		input.requestedBy,
+		{ after: stripReplenishmentForAudit(mapped) },
+	);
+	return mapped;
+}
+
+// 承認: pending → approved
+export async function approveReplenishmentRequest(
+	id: string,
+	actorUserId: string,
+): Promise<CashReplenishmentRequest | null> {
+	const before = await getReplenishmentRequest(id);
+	if (!before || before.status !== "pending") return null;
+	const { data } = await getSupabase()
+		.from("tks_cash_replenishment_requests")
+		.update({
+			status: "approved",
+			approved_by: actorUserId,
+			approved_at: new Date().toISOString(),
+			rejection_reason: null,
+		})
+		.eq("id", id)
+		.eq("status", "pending")
+		.select()
+		.maybeSingle();
+	if (!data) return null;
+	const after = mapReplenishment(data);
+	await writeAuditLog("replenishment_request", id, "update", actorUserId, {
+		diff: { status: { from: before.status, to: after.status } },
+	});
+	return after;
+}
+
+// 差戻し: pending → rejected
+export async function rejectReplenishmentRequest(
+	id: string,
+	actorUserId: string,
+	reason: string,
+): Promise<CashReplenishmentRequest | null> {
+	const before = await getReplenishmentRequest(id);
+	if (!before || before.status !== "pending") return null;
+	const { data } = await getSupabase()
+		.from("tks_cash_replenishment_requests")
+		.update({
+			status: "rejected",
+			rejection_reason: reason,
+			approved_by: actorUserId,
+			approved_at: new Date().toISOString(),
+		})
+		.eq("id", id)
+		.eq("status", "pending")
+		.select()
+		.maybeSingle();
+	if (!data) return null;
+	const after = mapReplenishment(data);
+	await writeAuditLog("replenishment_request", id, "update", actorUserId, {
+		diff: { status: { from: before.status, to: after.status } },
+	});
+	return after;
+}
+
+// 支給済記録: approved → fulfilled。tks_cash_deposits を自動作成。
+// 入金日と摘要は呼び出し元から指定（店長会の実施日など）。
+export async function fulfillReplenishmentRequest(input: {
+	id: string;
+	actorUserId: string;
+	depositDate: string;
+	depositDescription: string | null;
+}): Promise<CashReplenishmentRequest | null> {
+	const before = await getReplenishmentRequest(input.id);
+	if (!before || before.status !== "approved") return null;
+	// まず deposit 行を作る → その id を fulfilled_deposit_id に紐付ける
+	const deposit = await saveCashDeposit({
+		storeId: before.storeId,
+		date: input.depositDate,
+		amount: before.requestedAmount,
+		description: input.depositDescription ?? "補充申請による支給",
+		createdBy: input.actorUserId,
+	});
+	const { data } = await getSupabase()
+		.from("tks_cash_replenishment_requests")
+		.update({
+			status: "fulfilled",
+			fulfilled_deposit_id: deposit.id,
+		})
+		.eq("id", input.id)
+		.eq("status", "approved")
+		.select()
+		.maybeSingle();
+	if (!data) {
+		// 楽観ロック失敗時は作成済みの deposit を削除して整合性を保つ
+		await getSupabase().from("tks_cash_deposits").delete().eq("id", deposit.id);
+		return null;
+	}
+	const after = mapReplenishment(data);
+	await writeAuditLog(
+		"replenishment_request",
+		input.id,
+		"update",
+		input.actorUserId,
+		{
+			diff: { status: { from: before.status, to: after.status } },
+			fulfilled_deposit_id: deposit.id,
+		},
+	);
+	return after;
+}
+
+function stripReplenishmentForAudit(
+	r: CashReplenishmentRequest,
+): Record<string, unknown> {
+	return {
+		storeId: r.storeId,
+		targetMonth: r.targetMonth,
+		requestedAmount: r.requestedAmount,
+		reason: r.reason,
+		status: r.status,
+	};
+}
+
+function mapReplenishment(
+	r: Record<string, unknown>,
+): CashReplenishmentRequest {
+	return {
+		id: r.id as string,
+		storeId: r.store_id as string,
+		targetMonth: r.target_month as string,
+		requestedAmount: r.requested_amount as number,
+		reason: (r.reason as string | null) ?? null,
+		status: r.status as ReplenishmentStatus,
+		requestedBy: (r.requested_by as string | null) ?? null,
+		requestedAt: r.requested_at as string,
+		approvedBy: (r.approved_by as string | null) ?? null,
+		approvedAt: (r.approved_at as string | null) ?? null,
+		fulfilledDepositId: (r.fulfilled_deposit_id as string | null) ?? null,
+		rejectionReason: (r.rejection_reason as string | null) ?? null,
+		createdAt: r.created_at as string,
 	};
 }
 

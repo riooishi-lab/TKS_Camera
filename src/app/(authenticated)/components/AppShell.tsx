@@ -3,6 +3,7 @@
 import {
 	BarChart3,
 	BookOpen,
+	Coins,
 	LogOut,
 	Menu,
 	PanelLeftClose,
@@ -42,6 +43,13 @@ const allNavItems: NavItem[] = [
 		label: "小口現金帳",
 		icon: BookOpen,
 		roles: ["store_manager", "hq_accountant", "president"],
+	},
+	{
+		href: PAGE_PATH.replenishment,
+		label: "補充申請",
+		icon: Coins,
+		// 社長は閲覧専用、店舗担当者は自店舗のみ起票・閲覧
+		roles: ["store_staff", "store_manager", "hq_accountant", "president"],
 	},
 	{
 		href: PAGE_PATH.reports,

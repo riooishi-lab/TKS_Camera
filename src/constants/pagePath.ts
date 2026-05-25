@@ -6,6 +6,8 @@ export const PAGE_PATH = {
 	receiptEdit: (id: string) => `/receipts/${id}/edit` as const,
 	cashBook: "/cash-book",
 	reports: "/reports",
+	replenishment: "/replenishment",
+	replenishmentNew: "/replenishment/new",
 	users: "/settings/users",
 	tags: "/settings/tags",
 	stores: "/settings/stores",
