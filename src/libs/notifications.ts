@@ -1,5 +1,6 @@
 import { PAGE_PATH } from "@/constants/pagePath";
 import {
+	type CashReplenishmentRequest,
 	createNotifications,
 	getUsers,
 	type NotificationType,
@@ -188,5 +189,123 @@ export async function notifyReceiptEvent(params: {
 		});
 	} catch (err) {
 		console.error("notifyReceiptEvent:", err);
+	}
+}
+
+// ===== 補充申請の通知 (Phase 5) =====
+
+export type ReplenishmentNotificationEvent =
+	| "submitted"
+	| "approved"
+	| "rejected"
+	| "fulfilled";
+
+function replenishmentLabel(r: CashReplenishmentRequest): string {
+	const [y, m] = r.targetMonth.split("-");
+	const ym = `${y}年${Number(m)}月`;
+	return `${ym}分 ${r.requestedAmount.toLocaleString()}円`;
+}
+
+function resolveReplenishmentRecipients(
+	event: ReplenishmentNotificationEvent,
+	request: CashReplenishmentRequest,
+	activeUsers: TksUser[],
+): TksUser[] {
+	switch (event) {
+		case "submitted":
+			// 起票 → 本社経理へ
+			return activeUsers.filter((u) => u.role === "hq_accountant");
+		case "approved":
+		case "rejected":
+		case "fulfilled":
+			// 承認/差戻し/支給 → 申請者本人＋自店舗の店長へ
+			return activeUsers.filter(
+				(u) =>
+					u.id === request.requestedBy ||
+					(u.role === "store_manager" && u.storeId === request.storeId),
+			);
+	}
+}
+
+function buildReplenishmentMessage(
+	event: ReplenishmentNotificationEvent,
+	request: CashReplenishmentRequest,
+): { type: NotificationType; title: string; body: string } {
+	const label = replenishmentLabel(request);
+	switch (event) {
+		case "submitted":
+			return {
+				type: "replenishment_submitted",
+				title: "小口現金 補充申請があります",
+				body: `${label} の補充申請を確認してください。`,
+			};
+		case "approved":
+			return {
+				type: "replenishment_approved",
+				title: "補充申請が承認されました",
+				body: `${label} の補充申請が承認されました。`,
+			};
+		case "rejected":
+			return {
+				type: "replenishment_rejected",
+				title: "補充申請が差戻されました",
+				body: request.rejectionReason
+					? `${label} が差戻されました。理由: ${request.rejectionReason}`
+					: `${label} の補充申請が差戻されました。`,
+			};
+		case "fulfilled":
+			return {
+				type: "replenishment_fulfilled",
+				title: "現金が支給されました",
+				body: `${label} の現金支給を記録しました。`,
+			};
+	}
+}
+
+export async function notifyReplenishmentEvent(params: {
+	request: CashReplenishmentRequest;
+	event: ReplenishmentNotificationEvent;
+	users?: TksUser[];
+	actorId?: string | null;
+}): Promise<void> {
+	try {
+		const { request, event, actorId } = params;
+		const users = params.users ?? (await getUsers());
+		const activeUsers = users.filter((u) => u.status === "active");
+		const recipients = resolveReplenishmentRecipients(
+			event,
+			request,
+			activeUsers,
+		).filter((u) => !actorId || u.id !== actorId);
+		if (recipients.length === 0) return;
+
+		const { type, title, body } = buildReplenishmentMessage(event, request);
+		await createNotifications(
+			recipients.map((u) => ({
+				recipientId: u.id,
+				type,
+				receiptId: null,
+				title,
+				body,
+			})),
+		);
+
+		const emails = recipients.map((u) => u.email).filter(Boolean);
+		if (emails.length === 0) return;
+		const url =
+			typeof window !== "undefined"
+				? `${window.location.origin}${PAGE_PATH.replenishment}`
+				: PAGE_PATH.replenishment;
+		await fetch("/api/notifications/email", {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({
+				to: emails,
+				subject: `[レシートスキャナー] ${title}`,
+				text: `${body}\n\n補充申請一覧:\n${url}`,
+			}),
+		});
+	} catch (err) {
+		console.error("notifyReplenishmentEvent:", err);
 	}
 }
