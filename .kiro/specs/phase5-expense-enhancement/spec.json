@@ -1,0 +1,6 @@
+{
+  "name": "phase5-expense-enhancement",
+  "language": "ja",
+  "created_at": "2026-05-25",
+  "summary": "店舗経費精算機能の拡張（小口補充申請・店長立替経費・税率混在対応・3段階承認・通知強化・レポート/CSV出力）"
+}

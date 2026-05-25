@@ -113,7 +113,7 @@ export default function TagsPage() {
 		refresh();
 	}, [refresh]);
 
-	if (tksUser?.role === "staff") {
+	if (tksUser?.role === "store_staff") {
 		return (
 			<div className="py-12 text-center text-muted-foreground">
 				このページにはアクセスできません

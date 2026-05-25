@@ -70,7 +70,7 @@ function isActiveLink(pathname: string, href: string): boolean {
 export function AppShell({ children }: { children: React.ReactNode }) {
 	const pathname = usePathname();
 	const { tksUser, logout } = useAuth();
-	const role: UserRole = tksUser?.role ?? "staff";
+	const role: UserRole = tksUser?.role ?? "store_staff";
 
 	const navItems = allNavItems.filter(
 		(item) => !item.roles || item.roles.includes(role),

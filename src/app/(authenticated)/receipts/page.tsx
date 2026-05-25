@@ -81,7 +81,6 @@ const STATUS_LABELS: Record<ReceiptStatus, string> = {
 	pending: "申請中",
 	manager_approved: "店長承認済",
 	accountant_approved: "経理承認済",
-	approved: "全承認済",
 	rejected: "差戻し",
 	paid: "支払済",
 };
@@ -92,8 +91,7 @@ const STATUS_VARIANTS: Record<
 > = {
 	pending: "secondary",
 	manager_approved: "secondary",
-	accountant_approved: "secondary",
-	approved: "default",
+	accountant_approved: "default",
 	rejected: "destructive",
 	paid: "outline",
 };
@@ -327,7 +325,6 @@ function FilterBar({
 							value: "accountant_approved",
 							label: STATUS_LABELS.accountant_approved,
 						},
-						{ value: "approved", label: STATUS_LABELS.approved },
 						{ value: "rejected", label: STATUS_LABELS.rejected },
 						{ value: "paid", label: STATUS_LABELS.paid },
 					]}
@@ -557,6 +554,7 @@ function formatYearMonth(ym: string): string {
 
 // ロールが一括承認できる対象レシートのステータス。
 // 各承認者は自分のステージにあるレシートのみ承認できる。
+// Phase 5: 社長は承認フローから外れたため president は対象外。
 function approvableStatusForRole(
 	role: UserRole | undefined,
 ): ReceiptStatus | null {
@@ -565,8 +563,6 @@ function approvableStatusForRole(
 			return "pending";
 		case "hq_accountant":
 			return "manager_approved";
-		case "president":
-			return "accountant_approved";
 		default:
 			return null;
 	}
@@ -633,8 +629,8 @@ function exportReceiptsToCsv(params: {
 
 export default function ReceiptsPage() {
 	const { tksUser } = useAuth();
-	const isStaff = tksUser?.role === "staff";
-	const canCreate = isStaff;
+	// 社長は閲覧専用。それ以外のロールはレシート起票が可能。
+	const canCreate = tksUser?.role !== "president";
 	const [receipts, setReceipts] = useState<Receipt[]>([]);
 	const [stores, setStores] = useState<Store[]>([]);
 	const [users, setUsers] = useState<TksUser[]>([]);
@@ -666,7 +662,7 @@ export default function ReceiptsPage() {
 		const myRole = tksUser?.role;
 		const myStoreId = tksUser?.storeId ?? null;
 		const all = await getReceipts();
-		if (myRole === "staff") {
+		if (myRole === "store_staff") {
 			setReceipts(all.filter((r) => r.createdBy === myUserId));
 		} else if (myRole === "store_manager") {
 			setReceipts(all.filter((r) => r.storeId === myStoreId));
@@ -827,6 +823,7 @@ export default function ReceiptsPage() {
 						receipt: updated,
 						event: transition.event,
 						users: allUsers,
+						actorId: actor,
 					});
 				}
 			}

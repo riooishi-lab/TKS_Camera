@@ -9,19 +9,20 @@ import {
 } from "./storage";
 
 // 承認ワークフロー上の通知イベント。
-// fully_approved = 全承認完了（経理へ支払い依頼）
+// Phase 5 から社長承認(fully_approved)を廃止し3段階に簡素化。
+// 経理承認後は次が支払処理のため、申請者本人に通知する。
 export type ReceiptNotificationEvent =
 	| "submitted"
 	| "resubmitted"
 	| "manager_approved"
 	| "accountant_approved"
-	| "fully_approved"
 	| "rejected"
 	| "paid";
 
 // 承認を1段階進めるための更新パッチと通知イベントをロールから決定する。
 // 承認者ロールは承認できるステージが一意に定まるため、ロールのみで遷移先が決まる。
 // 呼び出し側で対象レシートが該当ステージにあることを保証すること。
+// president は閲覧専用のため承認パッチを返さない。
 export function buildApprovalPatch(
 	role: UserRole | undefined,
 	actorId: string | null,
@@ -46,15 +47,6 @@ export function buildApprovalPatch(
 				},
 				event: "accountant_approved",
 			};
-		case "president":
-			return {
-				patch: {
-					status: "approved",
-					presidentApprovedBy: actorId,
-					presidentApprovedAt: now,
-				},
-				event: "fully_approved",
-			};
 		default:
 			return null;
 	}
@@ -68,6 +60,7 @@ function receiptLabel(receipt: Receipt): string {
 }
 
 // イベントごとに通知先となるユーザーを決定する
+// REQ-N-04: 自己発火抑止は notifyReceiptEvent 側でフィルタする
 function resolveRecipients(
 	event: ReceiptNotificationEvent,
 	receipt: Receipt,
@@ -84,14 +77,12 @@ function resolveRecipients(
 					u.storeId === receipt.storeId,
 			);
 		case "manager_approved":
-			// 店長承認後 = 経理へ
+			// 店長承認後 = 本社経理へ
 			return activeUsers.filter((u) => u.role === "hq_accountant");
 		case "accountant_approved":
-			// 経理承認後 = 社長へ
-			return activeUsers.filter((u) => u.role === "president");
-		case "fully_approved":
-			// 全承認後 = 経理へ（支払い処理）
-			return activeUsers.filter((u) => u.role === "hq_accountant");
+			// 経理承認後 = 支払処理待ちのため申請者本人へ
+			// （Phase 5 で社長承認ステージを廃止）
+			return activeUsers.filter((u) => u.id === receipt.createdBy);
 		case "rejected":
 		case "paid":
 			// 差戻し・支払完了 = 申請者本人へ
@@ -126,14 +117,8 @@ function buildMessage(
 		case "accountant_approved":
 			return {
 				type: "receipt_approved",
-				title: "経理承認済みのレシートがあります",
-				body: `${label} の社長承認をお願いします。`,
-			};
-		case "fully_approved":
-			return {
-				type: "receipt_fully_approved",
-				title: "全承認済みのレシートがあります",
-				body: `${label} の支払い処理をお願いします。`,
+				title: "レシートが経理承認されました",
+				body: `${label} の経理承認が完了しました。まもなく支払処理が行われます。`,
 			};
 		case "rejected":
 			return {
@@ -156,16 +141,20 @@ function buildMessage(
 // アプリ内通知を作成し、設定済みであればメールも送信する。
 // 通知の失敗は呼び出し元の処理を妨げないよう内部で握りつぶす。
 // users を渡すと一覧取得を省略する（一括承認など連続呼び出し時の最適化）。
+// REQ-N-04: actor と同一の受信者は除外する（自己発火抑止）。
 export async function notifyReceiptEvent(params: {
 	receipt: Receipt;
 	event: ReceiptNotificationEvent;
 	users?: TksUser[];
+	actorId?: string | null;
 }): Promise<void> {
 	try {
-		const { receipt, event } = params;
+		const { receipt, event, actorId } = params;
 		const users = params.users ?? (await getUsers());
 		const activeUsers = users.filter((u) => u.status === "active");
-		const recipients = resolveRecipients(event, receipt, activeUsers);
+		const recipients = resolveRecipients(event, receipt, activeUsers).filter(
+			(u) => !actorId || u.id !== actorId,
+		);
 		if (recipients.length === 0) return;
 
 		const { type, title, body } = buildMessage(event, receipt);
