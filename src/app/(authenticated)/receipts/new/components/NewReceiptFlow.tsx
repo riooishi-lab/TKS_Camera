@@ -353,11 +353,23 @@ export function NewReceiptFlow() {
 					body: formData,
 				});
 				if (!res.ok) {
+					// サーバーが返したエラー文言を最優先で拾う。
+					// JSON でない（502/タイムアウト等）場合は本文の先頭やステータスを添える。
 					const msg = await res
+						.clone()
 						.json()
-						.then((d) => d.error || "AI解析に失敗しました")
-						.catch(() => "AI解析に失敗しました");
-					throw new Error(msg);
+						.then((d) => (typeof d?.error === "string" ? d.error : null))
+						.catch(() => null);
+					const fallback = await res
+						.text()
+						.then((t) => t.trim().slice(0, 200))
+						.catch(() => "");
+					throw new Error(
+						msg ||
+							`AI解析に失敗しました（HTTP ${res.status}${
+								fallback ? `: ${fallback}` : ""
+							}）`,
+					);
 				}
 				const data = await res.json();
 				const extraction: ReceiptExtraction = data.extraction;
@@ -384,11 +396,21 @@ export function NewReceiptFlow() {
 					status: "ready",
 				});
 			} catch (err) {
-				updateSheet(sheet.id, {
-					status: "error",
-					errorMessage:
-						err instanceof Error ? err.message : "エラーが発生しました",
-				});
+				// 原因を握り潰さず、可能な限り具体的な理由を画面に出す。
+				// Error 以外が throw された場合も String 化して情報を残す。
+				console.error("レシート解析エラー:", err);
+				let errorMessage: string;
+				if (err instanceof Error) {
+					errorMessage = err.message || err.name || "エラーが発生しました";
+					// ネットワーク断などの fetch 失敗は message が分かりにくいため補足する
+					if (err.name === "TypeError" && /fetch/i.test(err.message)) {
+						errorMessage =
+							"サーバーに接続できませんでした。通信環境を確認して再試行してください。";
+					}
+				} else {
+					errorMessage = String(err) || "エラーが発生しました";
+				}
+				updateSheet(sheet.id, { status: "error", errorMessage });
 			}
 		},
 		[defaultStoreId, updateSheet],
@@ -588,7 +610,7 @@ export function NewReceiptFlow() {
 								</CardTitle>
 							</CardHeader>
 							<CardContent>
-								<p className="text-sm text-destructive">
+								<p className="whitespace-pre-wrap break-words text-sm text-destructive">
 									{sheet.errorMessage ?? "不明なエラー"}
 								</p>
 								<Button
